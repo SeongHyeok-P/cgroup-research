@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: (LGPL-2.1 OR BSD-2-Clause) */
 /* Copyright (c) 2020 Facebook */
-#ifndef __DAEMON_BPF_H
-#define __DAEMON_BPF_H
+#ifndef __PROTECTED_DAEMON_H
+#define __PROTECTED_DAEMON_H
 
 #define TASK_COMM_LEN	 16
 
@@ -22,4 +22,4 @@ struct event {
 	char comm[TASK_COMM_LEN];
 };
 
-#endif /* __DAEMON_BPF_H */
+#endif /* __PROTECTED_DAEMON_H */
