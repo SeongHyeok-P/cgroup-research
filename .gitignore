@@ -1,0 +1,16 @@
+# build outputs
+*.o
+*.skel.h
+*.bpf.o
+*.tmp.bpf.o
+.output/
+daemon_v2
+protected_daemon
+
+# external dependency
+libbpf-bootstrap/
+
+# temporary files
+*.log
+*.tmp
+.DS_Store
