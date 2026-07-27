@@ -6,6 +6,14 @@
 .output/
 daemon_v2
 protected_daemon
+addr_translate_dram_test
+addr_translate_test
+bank_profile_merge_test
+bank_profile_overlap_test
+bank_profile_test
+calibration_test
+dram_mapping_test
+proc_activity_test
 
 # external dependency
 libbpf-bootstrap/
