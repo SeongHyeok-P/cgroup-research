@@ -1,8 +1,0 @@
-protected_daemon.bpf.c: kernel event sensor
-protected_daemon.h: protocol of kernel-BPF and userspace
-protected_daemon.c: main loop
-process.c/h: operate process 
-policy.c/h: brain
-cgroup.c/h: move process to cgroup
-
-
