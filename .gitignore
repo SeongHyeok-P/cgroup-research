@@ -14,6 +14,7 @@ bank_profile_test
 calibration_test
 dram_mapping_test
 proc_activity_test
+interference_detector_test
 
 # external dependency
 libbpf-bootstrap/
