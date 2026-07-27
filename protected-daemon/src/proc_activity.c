@@ -330,7 +330,14 @@ int proc_activity_compute_delta(const struct proc_activity_sample *old_sample, c
 
 	out->rss_score = clamp01(out->rss_mib / cfg->rss_mib_full_scale);
 
-	out->total_score = (0.6 * out->cpu_score) + (0.3 * out->fault_score) + (0.1 * out->rss_score);
+	/*
+	 * This score is not a direct memory-interference score
+	 * It is only used to rank active candidates before expensive
+	 * bank profiling. CPU is treated as a livness signal, while
+	 * fault and RSS are weighted more heavily for memory-side relevance
+	 */
+
+	out->total_score = (0.2 * out->cpu_score) + (0.5 * out->fault_score) + (0.3 * out->rss_score);
 
 	rss_large_enough = new_sample->rss_pages >= (int64_t)cfg->min_rss_pages;
 

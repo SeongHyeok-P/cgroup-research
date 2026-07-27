@@ -102,6 +102,8 @@ uint64_t bank_profile_count_for_class(const struct bank_profile *profile, uint64
 
 void bank_profile_print(FILE *stream, const struct bank_profile *profile, size_t max_entries);
 
+int bank_profile_merge(struct bank_profile *dst,const struct bank_profile *src);
+
 const char *bank_profile_strerror(int rc);
 
 #ifdef __cplusplus

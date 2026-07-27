@@ -182,17 +182,39 @@ static bool region_is_selected(const struct maps_region *region,const struct ban
 	return false;
 }
 
-static int profile_add_bank_class(struct bank_profile *profile, uint64_t bank_class,uint64_t bytes)
+/*
+ * aggregate src to dst
+ */
+void bank_profile_merge_counters(struct bank_profile *dst,const struct bank_profile *src)
+{
+	dst->regions_seen += src->regions_seen;
+	dst->regions_selected += src->regions_selected;
+
+	dst->pages_seen += src->pages_seen;
+	dst->pages_considered += src->pages_considered;
+	dst->pages_sampled += src->pages_sampled;
+	dst->pages_translated += src->pages_translated;
+
+	dst->pages_skipped_not_present += src->pages_skipped_not_present;
+	dst->pages_skipped_swapped += src->pages_skipped_not_present;
+	dst->pages_skipped_pfn_unavailable += src->pages_skipped_not_present;
+	dst->pages_skipped_translation_error +=	src->pages_skipped_not_present;
+	dst->pages_skipped_mapping_error += src->pages_skipped_not_present;
+}
+static int profile_add_bank_class_count(struct bank_profile *profile, uint64_t bank_class,uint64_t page_count,uint64_t byte_count)
 {
 	size_t i;
 	
 	if (profile == NULL)
 		return BANK_PROFILE_ERR_INVALID_ARG;
 
+	if (page_count == 0U && byte_count == 0U)
+		return BANK_PROFILE_OK;
+
 	for (i = 0; i < profile->entry_count; i++) {
 		if (profile->entries[i].bank_class == bank_class) {
-			profile->entries[i].page_count++;
-			profile->entries[i].byte_count += bytes;
+			profile->entries[i].page_count += page_count;
+			profile->entries[i].byte_count += byte_count;
 			return BANK_PROFILE_OK;
 		}
 	}
@@ -203,13 +225,16 @@ static int profile_add_bank_class(struct bank_profile *profile, uint64_t bank_cl
 	}
 
 	profile->entries[profile->entry_count].bank_class = bank_class;
-	profile->entries[profile->entry_count].page_count = 1U;
-	profile->entries[profile->entry_count].byte_count = bytes;
+	profile->entries[profile->entry_count].page_count = page_count;
+	profile->entries[profile->entry_count].byte_count = byte_count;
 	profile->entry_count++;
 
 	return BANK_PROFILE_OK;
 }
-
+static int profile_add_bank_class(struct bank_profile *profile, uint64_t bank_class, uint64_t bytes)
+{
+	return profile_add_bank_class_count(profile,bank_class,1U,bytes);
+}
 static void profile_finalize(struct bank_profile *profile)
 {
 	size_t i;
@@ -433,6 +458,72 @@ uint64_t bank_profile_count_for_class(const struct bank_profile *profile, uint64
 	}
 
 	return 0U;
+}
+
+int bank_profile_merge(struct bank_profile *dst,const struct bank_profile *src)
+{
+	size_t i;
+	int rc;
+
+	if (dst == NULL || src == NULL)
+		return BANK_PROFILE_ERR_INVALID_ARG;
+
+	/*
+	 * Empty src has nothing to merge
+	 */
+	if (src->entry_count == 0U)
+		return BANK_PROFILE_OK;
+
+	/*
+	 * If src has entries, it must have a valid page size
+	 */
+	if (src->page_size == 0U) {
+		profile_set_error(dst, "source profile has invalid page size");
+		return BANK_PROFILE_ERR_PAGE_SIZE;
+	}
+
+	/*
+	 * dst may be an empty aggregate profile initialized by bank_profile_reset()
+	 * In that case inherit page size from src
+	 */
+	if (dst->page_size == 0U) {
+		dst->page_size = src->page_size;
+	}
+	else if (dst->page_size != src->page_size) {
+		profile_set_error(dst, "cannot merge profiles with different page sizes");
+		return BANK_PROFILE_ERR_PAGE_SIZE;
+	}
+
+	/*
+	 * Aggregate profile dose not represent one concrete pid
+	 * pid == 0 means aggregate profile
+	 */
+	dst->pid = 0;
+
+	/*
+	 * Merge histogram entries.
+	 * bank_class = 0 is valid, so do not skip it
+	 */
+
+	for (i = 0U; i < src->entry_count; i++) {
+		rc = profile_add_bank_class_count(dst,src->entries[i].bank_class, src->entries[i].page_count,src->entries[i].byte_count);
+		if (rc != BANK_PROFILE_OK)
+			return rc;
+	}
+
+	/*
+	 * Merge profile-level counters once per src profile.
+         * Do not do this inside the entry loop.
+	 */
+	bank_profile_merge_counters(dst,src);
+
+	/*
+	 * Recompute dominant_bank_class, dominant_page_count,
+	 * and dominant_fraction after merging.
+	 */
+	profile_finalize(dst);
+
+	return BANK_PROFILE_OK;
 }
 
 int bank_profile_overlap_score(const struct bank_profile *a, const struct bank_profile *b, double *score_out,uint64_t *common_pages_out)
