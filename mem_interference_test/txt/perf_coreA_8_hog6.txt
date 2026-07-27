@@ -1,0 +1,13 @@
+
+ Performance counter stats for process id '813215':
+
+    50,425,941,429      cpu_core/cycles/                                                      
+     1,989,355,761      cpu_core/instructions/           #    0.04  insn per cycle            
+       371,683,604      cpu_core/l2_rqsts.demand_data_rd_miss/                                      
+       362,811,325      cpu_core/mem_load_retired.l3_hit/                                      
+         8,528,106      cpu_core/mem_load_retired.l3_miss/                                      
+         8,528,106      cpu_core/mem_load_l3_miss_retired.local_dram/                                      
+                 0      cpu_core/cycle_activity.stalls_l3_miss/                                      
+
+      12.001106407 seconds time elapsed
+

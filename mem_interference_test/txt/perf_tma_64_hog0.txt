@@ -1,0 +1,17 @@
+
+ Performance counter stats for process id '815167':
+
+   303,965,015,310      cpu_core/TOPDOWN.SLOTS/          #     98.4 %  tma_memory_bound       
+                                                  #     76.5 %  tma_dram_bound         
+                                                  #     11.4 %  tma_l3_bound           
+                 0      cpu_core/topdown-retiring/                                            
+   298,004,916,970      cpu_core/topdown-mem-bound/                                           
+                 0      cpu_core/topdown-bad-spec/                                            
+    44,551,006,056      cpu_core/MEMORY_ACTIVITY.STALLS_L2_MISS/                                      
+    38,780,553,924      cpu_core/MEMORY_ACTIVITY.STALLS_L3_MISS/                                      
+    50,671,553,142      cpu_core/CPU_CLK_UNHALTED.THREAD/                                      
+                 0      cpu_core/topdown-fe-bound/                                            
+   302,772,995,642      cpu_core/topdown-be-bound/                                            
+
+      12.000571696 seconds time elapsed
+

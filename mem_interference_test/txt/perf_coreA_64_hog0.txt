@@ -1,0 +1,13 @@
+
+ Performance counter stats for process id '812717':
+
+    50,687,933,797      cpu_core/cycles/                                                      
+       628,364,801      cpu_core/instructions/           #    0.01  insn per cycle            
+       130,855,283      cpu_core/l2_rqsts.demand_data_rd_miss/                                      
+        46,150,664      cpu_core/mem_load_retired.l3_hit/                                      
+        84,628,533      cpu_core/mem_load_retired.l3_miss/                                      
+        84,628,533      cpu_core/mem_load_l3_miss_retired.local_dram/                                      
+                 0      cpu_core/cycle_activity.stalls_l3_miss/                                      
+
+      12.000544370 seconds time elapsed
+

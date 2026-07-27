@@ -1,0 +1,798 @@
+  mem-loads OR cpu_atom/mem-loads/                   [Kernel PMU event]
+  mem-loads OR cpu_core/mem-loads/                   [Kernel PMU event]
+  mem-loads-aux OR cpu_core/mem-loads-aux/           [Kernel PMU event]
+  jbd2:jbd2_lock_buffer_stall                        [Tracepoint event]
+  napi:dql_stall_detected                            [Tracepoint event]
+  rcu:rcu_stall_warning                              [Tracepoint event]
+  resctrl:mon_llc_occupancy_limbo                    [Tracepoint event]
+  resctrl:pseudo_lock_l2                             [Tracepoint event]
+  resctrl:pseudo_lock_l3                             [Tracepoint event]
+  l2_request.all
+       [Counts the total number of L2 Cache accesses. Counts on a per core
+  l2_request.hit
+       [Counts the number of L2 Cache accesses that resulted in a hit. Counts
+  l2_request.miss
+       [Counts the number of L2 Cache accesses that resulted in a miss. Counts
+  longest_lat_cache.miss
+       [Counts the number of cacheable memory requests that miss in the LLC.
+  longest_lat_cache.reference
+       [Counts the number of cacheable memory requests that access the LLC.
+  mem_bound_stalls.ifetch
+       [Counts the number of cycles the core is stalled due to an instruction
+        cache or TLB miss which hit in the L2,LLC,DRAM or MMIO (Non-DRAM).
+  mem_bound_stalls.ifetch_dram_hit
+       [Counts the number of cycles the core is stalled due to an instruction
+        cache or TLB miss which hit in DRAM or MMIO (Non-DRAM). Unit: cpu_atom]
+  mem_bound_stalls.ifetch_l2_hit
+       [Counts the number of cycles the core is stalled due to an instruction
+        cache or TLB miss which hit in the L2 cache. Unit: cpu_atom]
+  mem_bound_stalls.ifetch_llc_hit
+       [Counts the number of cycles the core is stalled due to an instruction
+        cache or TLB miss which hit in the LLC or other core with HITE/F/M.
+  mem_bound_stalls.load
+       [Counts the number of cycles the core is stalled due to a demand load
+        miss which hit in the L2,LLC,DRAM or MMIO (Non-DRAM). Unit: cpu_atom]
+  mem_bound_stalls.load_dram_hit
+       [Counts the number of cycles the core is stalled due to a demand load
+        miss which hit in DRAM or MMIO (Non-DRAM). Unit: cpu_atom]
+  mem_bound_stalls.load_l2_hit
+       [Counts the number of cycles the core is stalled due to a demand load
+        which hit in the L2 cache. Unit: cpu_atom]
+  mem_bound_stalls.load_llc_hit
+       [Counts the number of cycles the core is stalled due to a demand load
+        which hit in the LLC or other core with HITE/F/M. Unit: cpu_atom]
+  mem_load_uops_retired.dram_hit
+       [Counts the number of load uops retired that hit in DRAM Supports
+  mem_load_uops_retired.hitm
+       [Counts the number of load uops retired that hit in the L3 cache,in
+  mem_load_uops_retired.l1_hit
+  mem_load_uops_retired.l1_miss
+  mem_load_uops_retired.l2_hit
+       [Counts the number of load uops retired that hit in the L2 cache
+  mem_load_uops_retired.l2_miss
+       [Counts the number of load uops retired that miss in the L2 cache
+  mem_load_uops_retired.l3_hit
+       [Counts the number of load uops retired that hit in the L3 cache
+  mem_load_uops_retired_misc.hit_e_f
+       [Counts the number of load uops retired that hit in the L3 cache,in
+  mem_load_uops_retired_misc.l3_miss
+       [Counts the number of load uops retired that miss in the L3 cache
+       [Counts modified writebacks from L1 cache and L2 cache that have any
+  ocr.demand_code_rd.l3_hit
+        that were supplied by the L3 cache. Unit: cpu_atom]
+  ocr.demand_code_rd.l3_hit.snoop_hit_no_fwd
+        that were supplied by the L3 cache where a snoop was sent,the snoop
+  ocr.demand_code_rd.l3_hit.snoop_hit_with_fwd
+        that were supplied by the L3 cache where a snoop was sent,the snoop
+  ocr.demand_code_rd.l3_hit.snoop_hitm
+        that were supplied by the L3 cache where a snoop was sent,the snoop
+  ocr.demand_data_rd.l3_hit
+       [Counts demand data reads that were supplied by the L3 cache. Unit:
+  ocr.demand_data_rd.l3_hit.snoop_hit_no_fwd
+       [Counts demand data reads that were supplied by the L3 cache where a
+  ocr.demand_data_rd.l3_hit.snoop_hit_with_fwd
+       [Counts demand data reads that were supplied by the L3 cache where a
+  ocr.demand_data_rd.l3_hit.snoop_hitm
+       [Counts demand data reads that were supplied by the L3 cache where a
+  ocr.demand_rfo.l3_hit
+        exclusive ownership (PREFETCHW) that were supplied by the L3 cache.
+  ocr.demand_rfo.l3_hit.snoop_hit_no_fwd
+        exclusive ownership (PREFETCHW) that were supplied by the L3 cache
+  ocr.demand_rfo.l3_hit.snoop_hit_with_fwd
+        exclusive ownership (PREFETCHW) that were supplied by the L3 cache
+  ocr.demand_rfo.l3_hit.snoop_hitm
+        exclusive ownership (PREFETCHW) that were supplied by the L3 cache
+  ocr.swpf_rd.l3_hit
+        NTA (except PREFETCHW) that were supplied by the L3 cache. Unit:
+  ocr.swpf_rd.l3_hit.snoop_hit_no_fwd
+        NTA (except PREFETCHW) that were supplied by the L3 cache where a
+  ocr.swpf_rd.l3_hit.snoop_hit_with_fwd
+        NTA (except PREFETCHW) that were supplied by the L3 cache where a
+  ocr.swpf_rd.l3_hit.snoop_hitm
+        NTA (except PREFETCHW) that were supplied by the L3 cache where a
+  l1d_pend_miss.l2_stalls
+        L2 resources. Unit: cpu_core]
+  l2_lines_in.all
+       [L2 cache lines filling L2. Unit: cpu_core]
+  l2_lines_out.non_silent
+       [Modified cache lines that are evicted by L2 cache when triggered by an
+        L2 cache fill. Unit: cpu_core]
+  l2_lines_out.silent
+       [Non-modified cache lines that are silently dropped by L2 cache. Unit:
+  l2_lines_out.useless_hwpf
+       [Cache lines that have been L2 hardware prefetched but not used by
+  l2_request.all
+       [All accesses to L2 cache [This event is alias to L2_RQSTS.REFERENCES].
+  l2_request.miss
+       [Read requests with true-miss in L2 cache. [This event is alias to
+        L2_RQSTS.MISS]. Unit: cpu_core]
+  l2_rqsts.all_code_rd
+       [L2 code requests. Unit: cpu_core]
+  l2_rqsts.all_demand_data_rd
+       [Demand Data Read access L2 cache. Unit: cpu_core]
+  l2_rqsts.all_demand_miss
+       [Demand requests that miss L2 cache. Unit: cpu_core]
+  l2_rqsts.all_hwpf
+       [L2_RQSTS.ALL_HWPF. Unit: cpu_core]
+  l2_rqsts.all_rfo
+       [RFO requests to L2 cache. Unit: cpu_core]
+  l2_rqsts.code_rd_hit
+       [L2 cache hits when fetching instructions,code reads. Unit: cpu_core]
+  l2_rqsts.code_rd_miss
+       [L2 cache misses when fetching instructions. Unit: cpu_core]
+  l2_rqsts.demand_data_rd_hit
+       [Demand Data Read requests that hit L2 cache. Unit: cpu_core]
+  l2_rqsts.demand_data_rd_miss
+       [Demand Data Read miss L2 cache. Unit: cpu_core]
+  l2_rqsts.hwpf_miss
+       [L2_RQSTS.HWPF_MISS. Unit: cpu_core]
+  l2_rqsts.miss
+       [Read requests with true-miss in L2 cache. [This event is alias to
+        L2_REQUEST.MISS]. Unit: cpu_core]
+  l2_rqsts.references
+       [All accesses to L2 cache [This event is alias to L2_REQUEST.ALL].
+  l2_rqsts.rfo_hit
+       [RFO requests that hit L2 cache. Unit: cpu_core]
+  l2_rqsts.rfo_miss
+       [RFO requests that miss L2 cache. Unit: cpu_core]
+  l2_rqsts.swpf_hit
+       [SW prefetch requests that hit L2 cache. Unit: cpu_core]
+  l2_rqsts.swpf_miss
+       [SW prefetch requests that miss L2 cache. Unit: cpu_core]
+  l2_trans.l2_wb
+       [L2 writebacks that access L2 cache. Unit: cpu_core]
+  longest_lat_cache.miss
+       [Core-originated cacheable requests that missed L3 (Except hardware
+        prefetches to the L3). Unit: cpu_core]
+  longest_lat_cache.reference
+       [Core-originated cacheable requests that refer to L3 (Except hardware
+        prefetches to the L3). Unit: cpu_core]
+  mem_load_completed.l1_miss_any
+  mem_load_l3_hit_retired.xsnp_fwd
+        shared L3 Supports address when precise. Unit: cpu_core]
+  mem_load_l3_hit_retired.xsnp_hit
+       [Retired load instructions whose data sources were L3 and cross-core
+  mem_load_l3_hit_retired.xsnp_hitm
+        shared L3 Supports address when precise. Unit: cpu_core]
+  mem_load_l3_hit_retired.xsnp_miss
+       [Retired load instructions whose data sources were L3 hit and
+  mem_load_l3_hit_retired.xsnp_no_fwd
+       [Retired load instructions whose data sources were L3 and cross-core
+  mem_load_l3_hit_retired.xsnp_none
+       [Retired load instructions whose data sources were hits in L3 without
+  mem_load_l3_miss_retired.local_dram
+       [Retired load instructions which data sources missed L3 but serviced
+        from local dram Supports address when precise. Unit: cpu_core]
+  mem_load_misc_retired.uc
+  mem_load_retired.fb_hit
+  mem_load_retired.l1_hit
+  mem_load_retired.l1_miss
+  mem_load_retired.l2_hit
+       [Retired load instructions with L2 cache hits as data sources Supports
+  mem_load_retired.l2_miss
+       [Retired load instructions missed L2 cache as data sources Supports
+  mem_load_retired.l3_hit
+       [Retired load instructions with L3 cache hits as data sources Supports
+  mem_load_retired.l3_miss
+       [Retired load instructions missed L3 cache as data sources Supports
+  mem_store_retired.l2_hit
+       [MEM_STORE_RETIRED.L2_HIT. Unit: cpu_core]
+  ocr.demand_data_rd.l3_hit.snoop_hit_with_fwd
+  ocr.demand_data_rd.l3_hit.snoop_hitm
+  ocr.demand_rfo.l3_hit.snoop_hitm
+  offcore_requests.all_requests
+       [OFFCORE_REQUESTS.ALL_REQUESTS. Unit: cpu_core]
+  offcore_requests.data_rd
+  offcore_requests.demand_code_rd
+  offcore_requests.demand_data_rd
+  offcore_requests.demand_rfo
+  offcore_requests_outstanding.cycles_with_data_rd
+       [OFFCORE_REQUESTS_OUTSTANDING.CYCLES_WITH_DATA_RD Spec update: ADL038.
+  offcore_requests_outstanding.cycles_with_demand_code_rd
+       [Cycles with offcore outstanding Code Reads transactions in the
+  offcore_requests_outstanding.cycles_with_demand_data_rd
+  offcore_requests_outstanding.cycles_with_demand_rfo
+       [Cycles with offcore outstanding demand rfo reads transactions in
+  offcore_requests_outstanding.data_rd
+       [OFFCORE_REQUESTS_OUTSTANDING.DATA_RD Spec update: ADL038. Unit:
+  offcore_requests_outstanding.demand_code_rd
+       [Offcore outstanding Code Reads transactions in the SuperQueue (SQ),
+  offcore_requests_outstanding.demand_data_rd
+       [Stalls caused by changing prefix length of the instruction. Unit:
+  frontend_retired.l2_miss
+       [Retired Instructions who experienced Instruction L2 Cache true miss.
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        was not interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+        interrupted by a back-end stall. Unit: cpu_core]
+  icache_data.stall_periods
+       [ICACHE_DATA.STALL_PERIODS. Unit: cpu_core]
+  icache_data.stalls
+       [Cycles where a code fetch is stalled due to L1 instruction cache miss.
+  icache_tag.stalls
+       [Cycles where a code fetch is stalled due to L1 instruction cache tag
+       [Uops not delivered by IDQ when backend of the machine is not stalled
+       [Cycles when no uops are not delivered by the IDQ when backend of the
+        machine is not stalled [This event is alias to
+        the back-end is not stalled [This event is alias to
+       [Uops not delivered by IDQ when backend of the machine is not stalled
+       [Cycles when no uops are not delivered by the IDQ when backend of the
+        machine is not stalled [This event is alias to
+        the back-end is not stalled [This event is alias to
+        buffer is stalled due to any number of reasons,including an L1 miss,
+        buffer is stalled due to a core bound stall including a store address
+        buffer and retirement are both stalled due to a DL1 miss. Unit:
+        buffer and retirement are both stalled due to other block cases. Unit:
+        buffer and retirement are both stalled due to a pagewalk. Unit:
+        buffer and retirement are both stalled due to a store address match.
+  ocr.demand_code_rd.dram
+        that were supplied by DRAM. Unit: cpu_atom]
+  ocr.demand_code_rd.l3_miss
+        that were not supplied by the L3 cache. Unit: cpu_atom]
+  ocr.demand_data_rd.dram
+       [Counts demand data reads that were supplied by DRAM. Unit: cpu_atom]
+  ocr.demand_data_rd.l3_miss
+       [Counts demand data reads that were not supplied by the L3 cache. Unit:
+  ocr.demand_data_rd.l3_miss_local
+       [Counts demand data reads that were not supplied by the L3 cache.
+        [L3_MISS_LOCAL is alias to L3_MISS]. Unit: cpu_atom]
+  ocr.demand_rfo.dram
+        exclusive ownership (PREFETCHW) that were supplied by DRAM. Unit:
+  ocr.demand_rfo.l3_miss
+        exclusive ownership (PREFETCHW) that were not supplied by the L3
+  ocr.demand_rfo.l3_miss_local
+        exclusive ownership (PREFETCHW) that were not supplied by the L3
+        cache. [L3_MISS_LOCAL is alias to L3_MISS]. Unit: cpu_atom]
+  ocr.swpf_rd.dram
+        NTA (except PREFETCHW) that were supplied by DRAM. Unit: cpu_atom]
+  ocr.swpf_rd.l3_miss
+        NTA (except PREFETCHW) that were not supplied by the L3 cache. Unit:
+  cycle_activity.stalls_l3_miss
+       [Execution stalls while L3 cache miss demand load is outstanding. Unit:
+  memory_activity.stalls_l1d_miss
+       [Execution stalls while L1 cache miss demand load is outstanding. Unit:
+  memory_activity.stalls_l2_miss
+       [Execution stalls while L2 cache miss demand cacheable load request is
+  memory_activity.stalls_l3_miss
+       [Execution stalls while L3 cache miss demand cacheable load request is
+  ocr.demand_data_rd.dram
+       [Counts demand data reads that were supplied by DRAM. Unit: cpu_core]
+  ocr.demand_data_rd.l3_miss
+       [Counts demand data reads that were not supplied by the L3 cache. Unit:
+  ocr.demand_rfo.l3_miss
+        by the L3 cache. Unit: cpu_core]
+  offcore_requests.l3_miss_demand_data_rd
+       [Counts demand data read requests that miss the L3 cache. Unit:
+  offcore_requests_outstanding.l3_miss_demand_data_rd
+        pending that are known to have missed the L3 cache. Unit: cpu_core]
+       [Counts the number of issue slots not consumed by the backend due to a
+        micro-sequencer (MS) scoreboard,which stalls the front-end from
+        backend because allocation is stalled due to a mispredicted jump or a
+        the backend due to fast nukes such as memory ordering and memory
+        backend because allocation is stalled due to a machine clear (nuke) of
+        the backend due to branch mispredicts. Unit: cpu_atom]
+        the backend due to a machine clear (nuke). Unit: cpu_atom]
+        consumed by the backend due to backend stalls. Unit: cpu_atom]
+        the backend due to certain allocation restrictions. Unit: cpu_atom]
+        the backend due to memory reservation stalls in which a scheduler is
+        the backend due to IEC or FPC RAT stalls,which can be due to FIQ or
+        IEC reservation stalls in which the integer,floating point or SIMD
+        the backend due to the physical register file unable to accept an
+        entry (marble stalls). Unit: cpu_atom]
+        the backend due to the reorder buffer being full (ROB stalls). Unit:
+        the backend due to scoreboards from the instruction queue (IQ),jump
+        consumed by the backend due to frontend stalls. Unit: cpu_atom]
+        by the frontend due to decode stalls. Unit: cpu_atom]
+        by the frontend due to a latency related stalls including BACLEARs,
+        by the frontend due to other common frontend stalls not categorized.
+  cycle_activity.cycles_l1d_miss
+  cycle_activity.cycles_l2_miss
+       [Cycles while L2 cache miss demand load is outstanding. Unit: cpu_core]
+  cycle_activity.cycles_mem_any
+  cycle_activity.stalls_l1d_miss
+       [Execution stalls while L1 cache miss demand load is outstanding. Unit:
+  cycle_activity.stalls_l2_miss
+       [Execution stalls while L2 cache miss demand load is outstanding. Unit:
+  cycle_activity.stalls_total
+       [Total execution stalls. Unit: cpu_core]
+       [Execution stalls while memory subsystem has an outstanding load. Unit:
+        execution stall. Unit: cpu_core]
+       [Core cycles the allocator was stalled due to recovery from earlier
+  resource_stalls.sb
+       [Cycles stalled due to no store buffers available. (not including
+  resource_stalls.scoreboard
+       [Counts cycles where the pipeline is stalled due to serializing
+  topdown.backend_bound_slots
+  topdown.memory_bound_slots
+       [TOPDOWN.MEMORY_BOUND_SLOTS. Unit: cpu_core]
+  uops_executed.stalls
+  uops_retired.stalls
+       [1 if persistent memory installed otherwise 0. Unit: tool]
+        cores,processor graphic units,or LLC. Unit: uncore_arb]
+       [ACT command for a read request sent to DRAM. Unit: uncore_imc]
+       [ACT command sent to DRAM. Unit: uncore_imc]
+       [ACT command for a write request sent to DRAM. Unit: uncore_imc]
+       [Read CAS command sent to DRAM. Unit: uncore_imc]
+       [Write CAS command sent to DRAM. Unit: uncore_imc]
+  unc_m_dram_page_empty_rd
+  unc_m_dram_page_empty_wr
+  unc_m_dram_page_hit_rd
+  unc_m_dram_page_hit_wr
+  unc_m_dram_page_miss_rd
+  unc_m_dram_page_miss_wr
+  unc_m_dram_thermal_hot
+  unc_m_dram_thermal_warm
+       [PRE command sent to DRAM due to page table idle timer expiration.
+       [PRE command sent to DRAM for a read/write request. Unit: uncore_imc]
+       [Counts every 64B read request entering the Memory Controller 0 to DRAM
+        DRAM (sum of all channels). Each write request counts as a new request
+        to DRAM. Unit: uncore_imc_free_running_0]
+        buffer and retirement are both stalled due to a DTLB miss. Unit:
+Backend: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+  tma_info_memory_l2mpki
+       [L2 cache true misses per kilo instruction for retired demand loads]
+  tma_memory_bound
+        the Backend was a bottleneck]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates fraction of slots the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+        Frontend undersupplies its Backend]
+        Frontend undersupplies its Backend]
+       [This metric estimates fraction of slots the CPU was stalled due to
+        stalled due to serializing operations]
+        - DRAM ([SPR-HBM] and/or HBM)]
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_backend_bound
+        in the Backend]
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due
+  tma_info_memory_l2hpki_all
+       [L2 cache hits per kilo instruction for all request types (including
+  tma_info_memory_l2hpki_load
+       [L2 cache hits per kilo instruction for all demand loads (including
+  tma_info_memory_l2mpki
+       [L2 cache true misses per kilo instruction for retired demand loads]
+  tma_info_memory_l2mpki_all
+       [L2 cache ([RKL+] true) misses per kilo instruction for all request
+  tma_info_memory_l2mpki_load
+       [L2 cache ([RKL+] true) misses per kilo instruction for all demand
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+  tma_info_memory_l2mpki_rfo
+       [Offcore requests (L2 cache miss) per kilo instruction for demand RFOs]
+  tma_info_botlnk_l2_dsb_bandwidth
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_botlnk_l2_dsb_misses
+  tma_backend_bound
+        in the Backend]
+        Frontend undersupplies its Backend]
+  tma_info_botlnk_l2_dsb_bandwidth
+  tma_info_botlnk_l2_dsb_misses
+  tma_info_botlnk_l2_ic_misses
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_info_botlnk_l2_dsb_bandwidth
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_botlnk_l2_ic_misses
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles CPU was stalled due to
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_info_system_dram_bw_use
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_botlnk_l2_ic_misses
+  tma_info_frontend_l2mpki_code
+       [L2 cache true code cacheline misses per kilo instruction]
+  tma_info_frontend_l2mpki_code_all
+       [L2 cache speculative code cacheline misses per kilo instruction]
+       [Percentage of time that allocation and retirement is stalled by the
+       [Percentage of time that retirement is stalled due to an L1 miss]
+  tma_info_memory_latency_load_l2_miss_latency
+       [Average Latency for L2 cache miss demand Loads]
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_memory_core_l2_cache_fill_bw_2t
+       [Average per-core data fill bandwidth to the L2 cache [GB / sec]]
+  tma_info_memory_core_l3_cache_access_bw_2t
+       [Average per-core data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_core_l3_cache_fill_bw_2t
+       [Average per-core data fill bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l2_cache_fill_bw
+       [Average per-thread data fill bandwidth to the L2 cache [GB / sec]]
+  tma_info_memory_l2hpki_all
+       [L2 cache hits per kilo instruction for all request types (including
+  tma_info_memory_l2hpki_load
+       [L2 cache hits per kilo instruction for all demand loads (including
+  tma_info_memory_l2mpki
+       [L2 cache true misses per kilo instruction for retired demand loads]
+  tma_info_memory_l2mpki_all
+       [L2 cache ([RKL+] true) misses per kilo instruction for all request
+  tma_info_memory_l2mpki_load
+       [L2 cache ([RKL+] true) misses per kilo instruction for all demand
+  tma_info_memory_l3_cache_access_bw
+       [Average per-thread data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l3_cache_fill_bw
+       [Average per-thread data fill bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l3mpki
+       [L3 cache true misses per kilo instruction for retired demand loads]
+MemOffcore:
+  tma_info_system_dram_bw_use
+       [Percentage of time that retirement is stalled by the Memory Cluster
+        due to a pipeline stall]
+  tma_info_memory_core_l2_cache_fill_bw_2t
+       [Average per-core data fill bandwidth to the L2 cache [GB / sec]]
+  tma_info_memory_core_l3_cache_access_bw_2t
+       [Average per-core data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_core_l3_cache_fill_bw_2t
+       [Average per-core data fill bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l2_cache_fill_bw
+       [Average per-thread data fill bandwidth to the L2 cache [GB / sec]]
+  tma_info_memory_l3_cache_access_bw
+       [Average per-thread data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l3_cache_fill_bw
+       [Average per-thread data fill bandwidth to the L3 cache [GB / sec]]
+  tma_info_system_dram_bw_use
+        - DRAM ([SPR-HBM] and/or HBM)]
+       [This metric estimates how often CPU was stalled due to Streaming store
+  tma_dram_bound
+       [This metric estimates how often the CPU was stalled on accesses to
+        external memory (DRAM) by loads]
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+       [This metric estimates how often CPU was stalled due to RFO store
+  tma_l2_hit_latency
+        that hit the L2 cache under unloaded scenarios (possibly L2 latency
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_memory_latency_data_l2_mlp
+       [Average Parallel L2 cache miss data reads]
+  tma_info_memory_latency_load_l2_mlp
+       [Average Parallel L2 cache miss demand Loads]
+  tma_info_memory_latency_load_l2_miss_latency
+       [Average Latency for L2 cache miss demand Loads]
+  tma_info_memory_latency_load_l3_miss_latency
+       [Average Latency for L3 cache miss demand Loads]
+       [This metric estimates the fraction of cycles when the CPU was stalled
+Offcore: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+  tma_info_memory_core_l3_cache_access_bw_2t
+       [Average per-core data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_l2mpki_all
+       [L2 cache ([RKL+] true) misses per kilo instruction for all request
+  tma_info_memory_l2mpki_rfo
+       [Offcore requests (L2 cache miss) per kilo instruction for demand RFOs]
+  tma_info_memory_l3_cache_access_bw
+       [Average per-thread data access bandwidth to the L3 cache [GB / sec]]
+  tma_info_memory_latency_data_l2_mlp
+       [Average Parallel L2 cache miss data reads]
+  tma_info_memory_latency_load_l2_miss_latency
+       [Average Latency for L2 cache miss demand Loads]
+  tma_info_memory_latency_load_l2_mlp
+       [Average Parallel L2 cache miss demand Loads]
+  tma_info_memory_latency_load_l3_miss_latency
+       [Average Latency for L3 cache miss demand Loads]
+        - DRAM ([SPR-HBM] and/or HBM)]
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric estimates how often CPU was stalled due to Streaming store
+        Frontend undersupplies its Backend]
+        stalled due to serializing operations]
+       [Rate of L2 HW prefetched lines that were not used by demand accesses]
+  tma_info_system_dram_bw_use
+  tma_backend_bound
+        in the Backend]
+        Frontend undersupplies its Backend]
+TmaL2: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+       [This metric represents fraction of slots the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_memory_bound
+        the Backend was a bottleneck]
+TmaL3mem: [Grouping from Top-down Microarchitecture Analysis Metrics spreadsheet]
+  tma_dram_bound
+       [This metric estimates how often the CPU was stalled on accesses to
+        external memory (DRAM) by loads]
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+       [This metric estimates how often CPU was stalled due to RFO store
+  tma_backend_bound
+        in the Backend]
+        Frontend undersupplies its Backend]
+TopdownL2: [Metrics for top-down breakdown at level 2]
+       [This metric represents fraction of slots the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_memory_bound
+        the Backend was a bottleneck]
+       [Counts the number of cycles the core is stalled due to a resource
+TopdownL3: [Metrics for top-down breakdown at level 3]
+       [Counts the number of issue slots that were not consumed by the backend
+       [This metric represents fraction of cycles the CPU was stalled due to
+        frontend due to decode stalls]
+  tma_dram_bound
+       [This metric estimates how often the CPU was stalled on accesses to
+        external memory (DRAM) by loads]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+       [This metric represents fraction of cycles CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+        due to memory reservation stalls in which a scheduler is not able to
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [Counts the number of issue slots that were not consumed by the backend
+        due to IEC or FPC RAT stalls,which can be due to FIQ or IEC
+        reservation stalls in which the integer,floating point or SIMD
+       [Counts the number of issue slots that were not consumed by the backend
+        frontend due to other common frontend stalls not categorized]
+       [This metric estimates fraction of slots the CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+        stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+        due to the reorder buffer being full (ROB stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+        stalled due to serializing operations]
+       [This metric estimates how often CPU was stalled due to RFO store
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+  tma_l2_hit_latency
+        that hit the L2 cache under unloaded scenarios (possibly L2 latency
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+        - DRAM ([SPR-HBM] and/or HBM)]
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often CPU was stalled due to Streaming store
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_load_miss_bound_%_loadmissbound_with_l2hit
+       [Percentage of memory bound stalls where retirement is stalled due to
+        an L1 miss that hit the L2]
+  tma_info_load_miss_bound_%_loadmissbound_with_l2miss
+       [Percentage of memory bound stalls where retirement is stalled due to
+        an L1 miss that subsequently misses in the L2]
+  tma_info_load_miss_bound_%_loadmissbound_with_l3hit
+       [Percentage of memory bound stalls where retirement is stalled due to
+        an L1 miss that hit the L3]
+  tma_info_load_miss_bound_%_loadmissbound_with_l3miss
+       [Percentage of memory bound stalls where retirement is stalled due to
+        an L1 miss that subsequently misses the L3]
+        stalled at retirement due to a pipeline block]
+        stalled at retirement]
+       [Counts the number of cycles the core is stalled due to store buffer
+  tma_backend_bound
+        in the Backend]
+        Frontend undersupplies its Backend]
+tma_L2_group: [Metrics for top-down breakdown at level 2]
+       [This metric represents fraction of slots the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_memory_bound
+        the Backend was a bottleneck]
+       [Counts the number of cycles the core is stalled due to a resource
+tma_L3_group: [Metrics for top-down breakdown at level 3]
+       [Counts the number of issue slots that were not consumed by the backend
+       [This metric represents fraction of cycles the CPU was stalled due to
+        frontend due to decode stalls]
+  tma_dram_bound
+       [This metric estimates how often the CPU was stalled on accesses to
+        external memory (DRAM) by loads]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+       [This metric represents fraction of cycles CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+        due to memory reservation stalls in which a scheduler is not able to
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [Counts the number of issue slots that were not consumed by the backend
+        due to IEC or FPC RAT stalls,which can be due to FIQ or IEC
+        reservation stalls in which the integer,floating point or SIMD
+       [Counts the number of issue slots that were not consumed by the backend
+        frontend due to other common frontend stalls not categorized]
+       [This metric estimates fraction of slots the CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+        stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+        due to the reorder buffer being full (ROB stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+        stalled due to serializing operations]
+       [This metric estimates how often CPU was stalled due to RFO store
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+  tma_l2_hit_latency
+        that hit the L2 cache under unloaded scenarios (possibly L2 latency
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+        - DRAM ([SPR-HBM] and/or HBM)]
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often CPU was stalled due to Streaming store
+       [This metric represents fraction of cycles the CPU was stalled due to
+tma_backend_bound_group: [Metrics contributing to tma_backend_bound category]
+  tma_memory_bound
+        the Backend was a bottleneck]
+       [Counts the number of cycles the core is stalled due to a resource
+       [This metric estimates fraction of slots the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [Counts the number of issue slots that were not consumed by the backend
+        stalled due to serializing operations]
+tma_dram_bound_group: [Metrics contributing to tma_dram_bound category]
+        - DRAM ([SPR-HBM] and/or HBM)]
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles CPU was stalled due to
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [This metric represents fraction of slots the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_code_l2_hit
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that hit in the L2 cache]
+  tma_code_l2_miss
+       [This metric estimates fraction of cycles the CPU was stalled due to
+        instruction cache misses that miss in the L2 cache]
+        frontend due to decode stalls]
+        frontend due to other common frontend stalls not categorized]
+       [Percentage of time that retirement is stalled due to a first level
+tma_info_buffer_stalls_%_load_buffer_stall_cycles:
+  tma_info_buffer_stalls_%_load_buffer_stall_cycles
+       [Percentage of time that allocation is stalled due to load buffer full]
+tma_info_buffer_stalls_%_mem_rsv_stall_cycles:
+  tma_info_buffer_stalls_%_mem_rsv_stall_cycles
+       [Percentage of time that allocation is stalled due to memory
+tma_info_buffer_stalls_%_store_buffer_stall_cycles:
+  tma_info_buffer_stalls_%_store_buffer_stall_cycles
+       [Percentage of time that allocation is stalled due to store buffer full]
+tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l2hit:
+  tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l2hit
+       [Percentage of ifetch miss bound stalls,where the ifetch miss hits in
+        the L2]
+tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l2miss:
+  tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l2miss
+       [Percentage of ifetch miss bound stalls,where the ifetch miss doesn't
+        hit in the L2]
+tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l3hit:
+  tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l3hit
+       [Percentage of ifetch miss bound stalls,where the ifetch miss hits in
+        the L3]
+tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l3miss:
+  tma_info_ifetch_miss_bound_%_ifetchmissbound_with_l3miss
+       [Percentage of ifetch miss bound stalls,where the ifetch miss
+        subsequently misses in the L3]
+       [Ratio of mem load uops to all uops]
+       [Percentage of time that the core is stalled due to a TPAUSE or UMWAIT
+       [This metric represents fraction of cycles the CPU was stalled due to
+  tma_info_system_dram_bw_use
+        - DRAM ([SPR-HBM] and/or HBM)]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of slots the CPU was stalled due to
+  tma_info_botlnk_l2_dsb_bandwidth
+  tma_info_botlnk_l2_dsb_misses
+       [This metric represents fraction of cycles CPU was stalled due to
+  tma_info_botlnk_l2_ic_misses
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+        likely hurt due to latency from external memory - DRAM ([SPR-HBM]
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often the CPU was stalled without loads
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [This metric estimates the fraction of cycles when the CPU was stalled
+       [This metric estimates the fraction of cycles when the CPU was stalled
+        stalled due to serializing operations]
+       [This metric estimates how often CPU was stalled due to Streaming store
+tma_l2_bound_group: [Metrics contributing to tma_l2_bound category]
+  tma_l2_hit_latency
+        that hit the L2 cache under unloaded scenarios (possibly L2 latency
+tma_l3_bound_group: [Metrics contributing to tma_l3_bound category]
+  tma_l3_hit_latency
+        that hit the L3 cache under unloaded scenarios (possibly L3 latency
+       [Counts the number of issue slots that were not consumed by the backend
+       [Counts the number of issue slots that were not consumed by the backend
+tma_memory_bound_group: [Metrics contributing to tma_memory_bound category]
+  tma_dram_bound
+       [This metric estimates how often the CPU was stalled on accesses to
+        external memory (DRAM) by loads]
+       [This metric estimates how often the CPU was stalled without loads
+  tma_l2_bound
+       [This metric estimates how often the CPU was stalled due to L2 cache
+  tma_l3_bound
+       [This metric estimates how often the CPU was stalled due to loads
+        accesses to L3 cache or contended with a sibling Core]
+       [This metric estimates how often CPU was stalled due to RFO store
+       [Counts the number of issue slots that were not consumed by the backend
+        due to memory reservation stalls in which a scheduler is not able to
+       [Counts the number of issue slots that were not consumed by the backend
+        due to IEC or FPC RAT stalls,which can be due to FIQ or IEC
+        reservation stalls in which the integer,floating point or SIMD
+       [Counts the number of issue slots that were not consumed by the backend
+        stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+        due to the reorder buffer being full (ROB stalls)]
+       [Counts the number of issue slots that were not consumed by the backend
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric represents fraction of cycles the CPU was stalled due to
+       [This metric estimates how often CPU was stalled due to Streaming store

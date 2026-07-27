@@ -1,0 +1,13 @@
+
+ Performance counter stats for process id '812808':
+
+    50,739,568,362      cpu_core/cycles/                                                      
+       170,498,320      cpu_core/instructions/           #    0.00  insn per cycle            
+        21,467,244      cpu_core/l2_rqsts.demand_data_rd_miss/                                      
+           104,868      cpu_core/mem_load_retired.l3_hit/                                      
+        21,214,946      cpu_core/mem_load_retired.l3_miss/                                      
+        21,214,946      cpu_core/mem_load_l3_miss_retired.local_dram/                                      
+                 0      cpu_core/cycle_activity.stalls_l3_miss/                                      
+
+      12.001069740 seconds time elapsed
+

@@ -1,0 +1,10 @@
+
+ Performance counter stats for 'system wide':
+
+     4,055,741,441      uncore_imc_0/unc_m_cas_count_rd/                                      
+     2,029,086,201      uncore_imc_0/unc_m_cas_count_wr/                                      
+                 0      uncore_imc_1/unc_m_cas_count_rd/                                      
+                 0      uncore_imc_1/unc_m_cas_count_wr/                                      
+
+      12.001108612 seconds time elapsed
+

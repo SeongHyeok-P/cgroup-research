@@ -1,0 +1,13 @@
+
+ Performance counter stats for process id '813180':
+
+    50,884,837,644      cpu_core/cycles/                                                      
+     3,233,495,799      cpu_core/instructions/           #    0.06  insn per cycle            
+       604,616,314      cpu_core/l2_rqsts.demand_data_rd_miss/                                      
+       603,495,370      cpu_core/mem_load_retired.l3_hit/                                      
+           696,838      cpu_core/mem_load_retired.l3_miss/                                      
+           696,838      cpu_core/mem_load_l3_miss_retired.local_dram/                                      
+                 0      cpu_core/cycle_activity.stalls_l3_miss/                                      
+
+      12.000549616 seconds time elapsed
+
