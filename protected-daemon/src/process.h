@@ -1,29 +1,26 @@
 #ifndef PROCESS_H
 #define PROCESS_H
 
+#include <stddef.h>
+#include <stdint.h>
 #include<sys/types.h>
+
 #include"protected_daemon.h"
+#include "cgroup.h"
 
-#define PROC_MAX 32768
-#define PROC_PATH_MAX 4096
-#define CMDLINE_MAX 4096
-
-enum proc_group {
-	GROUP_UNKNOWN = 0,
-	GROUP_PROTECTED,
-	GROUP_BACKGROUND,
-	GROUP_IGNORED,
-};
+#define PROC_MAX 32768U
+#define PROC_PATH_MAX 4096U
+#define CMDLINE_MAX 4096U
 
 struct proc_info {
 	int used;
+
 	pid_t pid;
 	pid_t ppid;
-	uid_t uid;
+	uint32_t uid;
 
 	int exec_seen;
 	int exited;
-
 	int is_protected;
 	int inherited_protected;
 
@@ -33,6 +30,15 @@ struct proc_info {
 	char exe_path[PROC_PATH_MAX];
 	char cmdline[CMDLINE_MAX];
 };
+
+/* Clear every process-table entry and collision-management state */
+void process_table_reset(void);
+
+/* Number of currently occupied entries */
+size_t process_table_count(void);
+
+/* Fixed table capacity. This is PROC_MAX */
+size_t process_table_capacity(void);
 
 struct proc_info *process_get(pid_t pid);
 struct proc_info *process_upsert_exec(const struct event *e);

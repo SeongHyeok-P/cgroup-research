@@ -2,6 +2,7 @@
 #define POLICY_H
 
 #include"process.h"
+#include "cgroup.h"
 
 int policy_load_config(const char *path);
 int policy_is_ignored(const struct proc_info *p);

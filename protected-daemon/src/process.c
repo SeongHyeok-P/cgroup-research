@@ -1,33 +1,185 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include<stdio.h>
 #include<string.h>
 #include<unistd.h>
-#include<stdlib.h>
 
 #include"process.h"
 
+enum process_slot_state {
+	PROCESS_SLOT_EMPTY = 0,
+	PROCESS_SLOT_OCCUPIED,
+	PROCESS_SLOT_TOMBSTONE
+};
 
 static struct proc_info proc_table[PROC_MAX];
+static unsigned char slot_states[PROC_MAX];
+static size_t occupied_count;
 
-static int proc_index(pid_t pid)
+static size_t process_hash(pid_t pid)
 {
-	if(pid < 0)
-		pid = -pid;
-	return pid % PROC_MAX;
+	return (size_t)((uint64_t)pid % (uint64_t)PROC_MAX);
+}
+
+/*
+ * Lookup stops only at an EMPTY slot.
+ * A TOMBSTONE cannot terminate lookup because an entry belonging to the 
+ * same probe chain may exist after it
+ */
+static int find_existing_slot(pid_t pid,size_t *slot_out)
+{
+	size_t start;
+	size_t probe;
+
+	if (pid <= 0 || slot_out == NULL)
+		return -1;
+
+	start = process_hash(pid);
+
+	for (probe = 0U; probe < (size_t)PROC_MAX; ++probe) {
+		size_t idx = (start + probe) % (size_t)PROC_MAX;
+
+		if (slot_states[idx] == PROCESS_SLOT_EMPTY)
+			return 0;
+
+		if (slot_states[idx] == PROCESS_SLOT_OCCUPIED && proc_table[idx].used && proc_table[idx].pid == pid) {
+			*slot_out = idx;
+			return 1;
+		}
+	}
+
+	return 0;
+}
+
+/*
+ * Find an existing PID or a slot where a new PID can be inserted.
+ * The first tombstone is remembered, but probing continues so that an
+ * existing matching PID later in the chain is never duplicated
+ */
+static int find_upsert_slot(pid_t pid, size_t *slot_out, int *found_out)
+{
+	size_t start;
+	size_t probe;
+	size_t first_tombstone = (size_t)PROC_MAX;
+
+	if (pid <= 0 || slot_out == NULL || found_out == NULL)
+		return -1;
+
+	start = process_hash(pid);
+
+	for (probe = 0U; probe < (size_t)PROC_MAX; ++probe) {
+		size_t idx = (start + probe) % (size_t)PROC_MAX;
+
+		if (slot_states[idx] == PROCESS_SLOT_OCCUPIED) {
+			if (proc_table[idx].used && proc_table[idx].pid == pid) {
+				*slot_out = idx;
+				*found_out = 1;
+				return 0;
+			}
+			continue;
+		}
+
+		if (slot_states[idx] == PROCESS_SLOT_TOMBSTONE) {
+			if (first_tombstone == (size_t)PROC_MAX)
+				first_tombstone = idx;
+			continue;
+		}
+
+		/*
+		 * EMPTY terminates the probe chain for insertion */
+		*slot_out = first_tombstone != (size_t)PROC_MAX ? first_tombstone : idx;
+
+		*found_out = 0;
+		return 0;
+	}
+
+	/* The table has no EMPTY slot, but a tombstone may still be reusable */
+	if (first_tombstone != (size_t)PROC_MAX) {
+		*slot_out = first_tombstone;
+		*found_out = 0;
+		return 0;
+	}
+
+	return -1;
+}
+
+static struct proc_info *prepare_upsert(pid_t pid,int *found_out)
+{
+	size_t idx;
+	int found;
+
+	if (find_upsert_slot(pid,&idx,&found) != 0)
+		return NULL;
+
+	if (!found) {
+		if (occupied_count >= (size_t)PROC_MAX)
+			return NULL;
+
+		memset(&proc_table[idx],0,sizeof(proc_table[idx]));
+		slot_states[idx] = PROCESS_SLOT_OCCUPIED;
+		occupied_count++;
+	}
+
+	if (found_out != NULL)
+		*found_out = found;
+
+	return &proc_table[idx];
+}
+
+void process_table_reset(void)
+{
+	memset(proc_table, 0, sizeof(proc_table));
+	memset(slot_states, PROCESS_SLOT_EMPTY,sizeof(slot_states));
+	occupied_count = 0U;
+}
+
+size_t process_table_count(void)
+{
+	return occupied_count;
+}
+
+size_t process_table_capacity(void)
+{
+	return (size_t)PROC_MAX;
 }
 
 struct proc_info *process_get(pid_t pid)
 {
-	int idx = proc_index(pid);
+	size_t idx;
+	int found;
 
-	if(proc_table[idx].used && proc_table[idx].pid == pid)
-		return &proc_table[idx];
-	return NULL;
+	found = find_existing_slot(pid,&idx);
+	if (found != 1)
+		return NULL;
+
+	return &proc_table[idx];
 }
 
 struct proc_info *process_upsert_exec(const struct event *e)
 {
-	int idx = proc_index(e->pid);
-	struct proc_info *p = &proc_table[idx];
+	struct proc_info *p;
+	int found = 0;
+	int preserve_is_protected = 0;
+	int preserve_inherited_protected = 0;
+	enum proc_group preserve_group = GROUP_UNKNOWN;
+
+	if (e == NULL || e->pid <= 0)
+		return NULL;
+
+	p = prepare_upsert(e->pid,&found);
+	if (p == NULL)
+		return NULL;
+
+	/*
+	 * Fork creates a pre-exec child record. Exec must refresh process
+	 * metadata without dropping protection inherited from its parent
+	 * The same rule also preserves protection across a later execve()
+	 */
+	if (found) {
+		preserve_is_protected = p->is_protected;
+		preserve_inherited_protected = p->inherited_protected;
+		preserve_group = p->group;
+	}
 
 	memset(p,0,sizeof(*p));
 
@@ -36,22 +188,35 @@ struct proc_info *process_upsert_exec(const struct event *e)
 	p->ppid = e->ppid;
 	p->uid = e->uid;
 	p->exec_seen = 1;
-	p->group = GROUP_UNKNOWN;
+	p->is_protected = preserve_is_protected;
+	p->inherited_protected = preserve_inherited_protected;
+	p->group = preserve_group;
 
-	snprintf(p->comm,sizeof(p->comm),"%s",e->comm);
+	if (!found)
+		p->group = GROUP_UNKNOWN;
 
-	process_read_exe(p);
-	process_read_cmdline(p);
+	(void)snprintf(p->comm,sizeof(p->comm),"%s",e->comm);
+
+	(void)process_read_exe(p);
+	(void)process_read_cmdline(p);
 
 	return p;
 }
 
 struct proc_info *process_upsert_fork(const struct event *e)
 {
-	int idx = proc_index(e->child_pid);
-	struct proc_info *child = &proc_table[idx];
-	struct proc_info *parent = process_get(e->pid);
+	struct proc_info *parent;
+	struct proc_info *child;
 
+	if (e == NULL || e->pid <= 0 || e->child_pid <= 0)
+		return NULL;
+
+	parent = process_get(e->pid);
+	child = prepare_upsert(e->child_pid,NULL);
+	if (child == NULL)
+		return NULL;
+
+	/* A fork event creates a fresh process identity for child_pid. */
 	memset(child,0,sizeof(*child));
 
 	child->used = 1;
@@ -60,7 +225,7 @@ struct proc_info *process_upsert_fork(const struct event *e)
 	child->uid = e->uid;
 	child->group = GROUP_UNKNOWN;
 
-	snprintf(child->comm, sizeof(child->comm),"%s",e->comm);
+	(void)snprintf(child->comm, sizeof(child->comm),"%s",e->comm);
 
 	if(parent && parent->used && parent->is_protected) {
 		child->is_protected = 1;
@@ -72,28 +237,42 @@ struct proc_info *process_upsert_fork(const struct event *e)
 
 void process_remove(pid_t pid)
 {
-	int idx = proc_index(pid);
+	size_t idx;
+	int found;
 
-	if(proc_table[idx].used && proc_table[idx].pid == pid)
-		memset(&proc_table[idx],0,sizeof(proc_table[idx]));
+	found = find_existing_slot(pid, &idx);
+	if (found != 1)
+		return;
+
+	memset(&proc_table[idx],0,sizeof(proc_table[idx]));
+	slot_states[idx] = PROCESS_SLOT_TOMBSTONE;
+
+	if (occupied_count > 0U)
+		occupied_count--;
 }
 
 int process_read_exe(struct proc_info *p)
 {
 	char path[256];
 	ssize_t len;
+	int written;
 
-	if(!p)
+	if(p == NULL || p->pid <= 0)
 		return -1;
-	snprintf(path, sizeof(path), "/proc/%d/exe",p->pid);
 
-	len = readlink(path, p->exe_path,sizeof(p->exe_path) -1);
+	written = snprintf(path, sizeof(path), "/proc/%ld/exe",(long)p->pid);
+	if (written <= 0 || (size_t)written >= sizeof(path)) {
+		p->exe_path[0] = '\0';
+		return -1;
+	}
+
+	len = readlink(path, p->exe_path,sizeof(p->exe_path) -1U);
 	if(len < 0) {
 		p->exe_path[0] = '\0';
 		return -1;
 	}
 
-	p->exe_path[len] = '\0';
+	p->exe_path[(size_t)len] = '\0';
 	return 0;
 }
 
@@ -102,29 +281,39 @@ int process_read_cmdline(struct proc_info *p)
 	char path[256];
 	FILE *f;
 	size_t n;
+	size_t i;
+	int written;
 
-	if(!p)
+	if(p == NULL || p->pid <= 0)
 		return -1;
 
-	snprintf(path,sizeof(path),"/proc/%d/cmdline",p->pid);
+	written = snprintf(path,sizeof(path),"/proc/%ld/cmdline",(long)p->pid);
+	if (written <= 0 || (size_t)written >= sizeof(path)) {
+		p->cmdline[0] = '\0';
+		return -1;
+	}
 	
 	f = fopen(path,"r");
-	if(!f) {
+	if(f == NULL) {
 		p->cmdline[0] = '\0';
 		return -1;
 	}
 
-	n = fread(p->cmdline, 1, sizeof(p->cmdline) -1,f);
-	fclose(f);
+	n = fread(p->cmdline, 1U, sizeof(p->cmdline) -1U,f);
+	if (fclose(f) != 0) {
+		p->cmdline[0] = '\0';
+		return -1;
+	}
 
-	if(n == 0) {
+	if(n == 0U) {
 		p->cmdline[0] = '\0';
 		return -1;
 	}
 
 	p->cmdline[n] = '\0';
-
-	for (size_t i = 0; i < n; i++) {
+	
+	/* /proc/[pid]/cmdline separates arguments with NULL bytes */
+	for (i = 0U; i < n; i++) {
 		if(p->cmdline[i] == '\0')
 			p->cmdline[i] = ' ';
 	}

@@ -290,7 +290,7 @@ int proc_activity_compute_delta(const struct proc_activity_sample *old_sample, c
 		return PROC_ACTIVITY_ERR_NON_MONOTONIC_TIME;
 
 	old_cpu_ticks = old_sample->utime_ticks + old_sample->stime_ticks;
-	new_cpu_ticks = new_sample->utime_ticks + old_sample->stime_ticks;
+	new_cpu_ticks = new_sample->utime_ticks + new_sample->stime_ticks;
 
 	if (new_cpu_ticks < old_cpu_ticks)
 		return PROC_ACTIVITY_ERR_PARSE;

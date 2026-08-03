@@ -9,9 +9,28 @@
 static char protected_comm[MAX_PROTECTED][TASK_COMM_LEN];
 static int protected_count = 0;
 
-static void trim_newline(char *s)
+static void trim_line(char *s)
 {
+	char *start;
+	char *end;
+
+	if (s == NULL)
+		return;
+
 	s[strcspn(s, "\r\n")] = '\0';
+
+	start = s;
+	while (*start && isspace((unsigned char)*start))
+		start++;
+
+	if (start != s)
+		memmove(s , start, strlen(start) + 1U);
+
+	end = s + strlen(s);
+	while (end > s && isspace((unsigned char)*(end - 1))) {
+		*(end - 1) = '\0';
+		end--;
+	}
 }
 
 int policy_load_config(const char *path)
@@ -19,13 +38,15 @@ int policy_load_config(const char *path)
 	FILE *f = fopen(path, "r");
 	char line[256];
 
+	protected_count = 0;
+
 	if(!f) {
 		fprintf(stderr, "[ERROR] failed to open config: %s\n",path);
 		return -1;
 	}
 
 	while(fgets(line, sizeof(line),f)) {
-		trim_newline(line);
+		trim_line(line);
 
 		if(line[0] == '\0')
 			continue;
@@ -72,8 +93,10 @@ enum proc_group policy_decide_group(struct proc_info *p)
 {
 	if(policy_is_ignored(p))
 		return GROUP_IGNORED;
+
 	if(p->is_protected || policy_is_protected(p))
 		return GROUP_PROTECTED;
+
 	return GROUP_BACKGROUND;
 }
 

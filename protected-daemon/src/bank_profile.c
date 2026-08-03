@@ -196,10 +196,10 @@ void bank_profile_merge_counters(struct bank_profile *dst,const struct bank_prof
 	dst->pages_translated += src->pages_translated;
 
 	dst->pages_skipped_not_present += src->pages_skipped_not_present;
-	dst->pages_skipped_swapped += src->pages_skipped_not_present;
-	dst->pages_skipped_pfn_unavailable += src->pages_skipped_not_present;
-	dst->pages_skipped_translation_error +=	src->pages_skipped_not_present;
-	dst->pages_skipped_mapping_error += src->pages_skipped_not_present;
+	dst->pages_skipped_swapped += src->pages_skipped_swapped;
+	dst->pages_skipped_pfn_unavailable += src->pages_skipped_pfn_unavailable;
+	dst->pages_skipped_translation_error +=	src->pages_skipped_translation_error;
+	dst->pages_skipped_mapping_error += src->pages_skipped_mapping_error;
 }
 static int profile_add_bank_class_count(struct bank_profile *profile, uint64_t bank_class,uint64_t page_count,uint64_t byte_count)
 {
