@@ -12,9 +12,9 @@ enum process_slot_state {
 	PROCESS_SLOT_TOMBSTONE
 };
 
-static struct proc_info proc_table[PROC_MAX];
-static unsigned char slot_states[PROC_MAX];
-static size_t occupied_count;
+static struct proc_info proc_table[PROC_MAX];      /* store proc info */
+static unsigned char slot_states[PROC_MAX];	   /* store states of proc_table slots */
+static size_t occupied_count;			   /* store pid count in proc_table except tombstone */	
 
 static size_t process_hash(pid_t pid)
 {
@@ -320,3 +320,74 @@ int process_read_cmdline(struct proc_info *p)
 	return 0;
 }
 
+int process_snapshot(struct proc_info *out, size_t capacity, size_t *out_count)
+{
+    size_t i;
+    size_t actual_count = 0U;
+    size_t copied_count = 0U;
+
+    if (out_count == NULL)
+        return PROCESS_ERR_INVALID_ARG;
+
+    /*
+     * 실패하는 모든 경우에 caller가 이전 out_count 값을
+     * 잘못 사용하지 않도록 먼저 0으로 만든다.
+     */
+    *out_count = 0U;
+
+    if (out == NULL)
+        return PROCESS_ERR_INVALID_ARG;
+
+    /*
+     * First pass:
+     * 실제 OCCUPIED entry 수를 확인하면서
+     * process table의 내부 일관성도 검사한다.
+     *
+     * 아직 out[]에는 아무것도 쓰지 않는다.
+     */
+    for (i = 0U; i < (size_t)PROC_MAX; i++) {
+        if (slot_states[i] == PROCESS_SLOT_OCCUPIED) {
+            if (!proc_table[i].used || proc_table[i].pid <= 0)
+                return PROCESS_ERR_INCONSISTENT;
+
+            actual_count++;
+            continue;
+        }
+
+        /*
+         * EMPTY 또는 TOMBSTONE인데 used=1이라면
+         * slot state와 proc_table 내용이 서로 모순이다.
+         */
+        if (proc_table[i].used)
+            return PROCESS_ERR_INCONSISTENT;
+    }
+
+    /*
+     * 우리가 따로 관리하는 occupied_count와
+     * 실제 table 내용이 일치하는지 검증한다.
+     */
+    if (actual_count != occupied_count)
+        return PROCESS_ERR_INCONSISTENT;
+
+    /*
+     * 부분 snapshot은 허용하지 않는다.
+     */
+    if (capacity < actual_count)
+        return PROCESS_ERR_NO_SPACE;
+
+    /*
+     * Second pass:
+     * 전체 snapshot이 buffer에 들어간다는 것이 확인된 후
+     * 실제 데이터를 복사한다.
+     */
+    for (i = 0U; i < (size_t)PROC_MAX; i++) {
+        if (slot_states[i] != PROCESS_SLOT_OCCUPIED)
+            continue;
+
+        out[copied_count++] = proc_table[i];
+    }
+
+    *out_count = copied_count;
+
+    return PROCESS_OK;
+}

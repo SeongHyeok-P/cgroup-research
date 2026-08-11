@@ -305,7 +305,11 @@ static int sample_region(const struct maps_region *region,struct addr_translate_
 	stride = cfg->sample_stride_pages;
 	if (stride == 0U)
 		stride = 1U;
-
+	
+	/*
+	 * 현재는 4096개를 순차적으로 샘플링하고 있음 이렇게 되면 VMA에 앞부분 밖에 못봄.
+	 * 따라서 추후에 랜덤하게 샘플링하거나 하는 방식도 보아야함.
+	 */
 	for (page_idx = 0U; page_idx < region_pages; page_idx += stride) {
 		struct addr_translation tr;
 		uint64_t va;

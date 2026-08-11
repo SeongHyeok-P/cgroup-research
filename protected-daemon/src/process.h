@@ -8,9 +8,17 @@
 #include"protected_daemon.h"
 #include "cgroup.h"
 
+/* linux standard max pid count */
 #define PROC_MAX 32768U
 #define PROC_PATH_MAX 4096U
 #define CMDLINE_MAX 4096U
+
+enum process_result {
+	PROCESS_OK = 0,
+	PROCESS_ERR_INVALID_ARG = -1,
+	PROCESS_ERR_NO_SPACE = -2,
+	PROCESS_ERR_INCONSISTENT = -3
+};
 
 struct proc_info {
 	int used;
@@ -48,4 +56,5 @@ void process_remove(pid_t pid);
 int process_read_exe(struct proc_info *p);
 int process_read_cmdline(struct proc_info *p);
 
+int process_snapshot(struct proc_info *out, size_t capacity, size_t *out_count);
 #endif
