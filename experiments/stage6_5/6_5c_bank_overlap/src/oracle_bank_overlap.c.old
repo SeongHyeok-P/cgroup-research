@@ -1,0 +1,3230 @@
+#define _GNU_SOURCE
+
+#include "calibration.h"
+#include "dram_mapping.h"
+
+#include <errno.h>
+#include <fcntl.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <sched.h>
+#include <signal.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/mman.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <time.h>
+#include <unistd.h>
+
+#define DEFAULT_CALIBRATION_PATH \
+    "/run/protected-daemon/dram-map.json"
+
+#define DEFAULT_POOL_MIB 2048U
+#define DEFAULT_WORKSET_MIB 64U
+#define DEFAULT_GROUP_CLASSES 16U
+#define DEFAULT_SECONDS 10U
+
+/*
+ * 현재 실험 머신에서 이전 B3와 맞춘 placement.
+ *
+ * protected : CPU 14
+ * aggressor : CPU 12
+ *
+ * 서로 다른 physical core의 representative logical CPU.
+ */
+#define DEFAULT_VICTIM_CPU 14
+#define DEFAULT_AGGRESSOR_CPU 12
+
+#define DEFAULT_SEED 20260814ULL
+
+#define SELFTEST_POOL_MIB 512U
+#define SELFTEST_WORKSET_MIB 8U
+#define SELFTEST_GROUP_CLASSES 8U
+#define SELFTEST_SECONDS 2U
+
+#define CACHELINE_BYTES 64U
+
+#define PAGEMAP_PRESENT_BIT (1ULL << 63U)
+#define PAGEMAP_SWAPPED_BIT (1ULL << 62U)
+#define PAGEMAP_PFN_MASK ((1ULL << 55U) - 1ULL)
+
+#define MAX_ORACLE_MASKS 16U
+
+enum oracle_condition {
+    ORACLE_CONDITION_NONE = 0,
+    ORACLE_CONDITION_HIGH = 1,
+    ORACLE_CONDITION_LOW = 2,
+    ORACLE_CONDITION_COUNT = 3
+};
+
+enum pfn_status {
+    PFN_STATUS_OK = 0,
+    PFN_STATUS_NOT_PRESENT = 1,
+    PFN_STATUS_SWAPPED = 2,
+    PFN_STATUS_UNAVAILABLE = 3,
+    PFN_STATUS_IO_ERROR = 4
+};
+
+struct oracle_config {
+    const char *calibration_path;
+
+    size_t pool_mib;
+    size_t workset_mib;
+    size_t group_classes;
+
+    unsigned int seconds;
+
+    int victim_cpu;
+    int aggressor_cpu;
+
+    uint64_t seed;
+
+    enum oracle_condition order[ORACLE_CONDITION_COUNT];
+    size_t order_count;
+
+    bool self_test;
+};
+
+struct pool_page {
+    uint64_t pfn;
+    uint32_t bank_class;
+    bool valid;
+};
+
+struct selected_page {
+    uintptr_t address;
+    uint64_t pfn;
+    uint32_t bank_class;
+};
+
+struct oracle_selection {
+    struct selected_page *victim;
+    struct selected_page *high;
+    struct selected_page *low;
+
+    size_t page_count;
+
+    uint32_t *overlap_classes;
+    uint32_t *low_classes;
+    size_t *quota;
+
+    size_t class_group_count;
+};
+
+struct victim_result {
+    int rc;
+
+    double elapsed_sec;
+    uint64_t reads;
+    double ns_per_read;
+
+    uintptr_t final_address;
+};
+
+struct aggressor_result {
+    int rc;
+
+    double elapsed_sec;
+
+    uint64_t passes;
+    uint64_t load_ops;
+    uint64_t checksum;
+};
+
+struct child_channel {
+    pid_t pid;
+
+    int ready_fd;
+    int start_fd;
+    int result_fd;
+};
+
+struct condition_result {
+    enum oracle_condition condition;
+
+    double victim_elapsed_sec;
+    uint64_t victim_reads;
+    double victim_ns_per_read;
+
+    double aggressor_elapsed_sec;
+    uint64_t aggressor_passes;
+    uint64_t aggressor_load_ops;
+    double aggressor_mops;
+};
+
+/* --------------------------------------------------------- */
+/* Utility                                                   */
+/* --------------------------------------------------------- */
+
+static const char *condition_name(enum oracle_condition condition)
+{
+    switch (condition) {
+    case ORACLE_CONDITION_NONE:
+        return "none";
+    case ORACLE_CONDITION_HIGH:
+        return "high";
+    case ORACLE_CONDITION_LOW:
+        return "low";
+    default:
+        return "unknown";
+    }
+}
+
+static void usage(const char *prog)
+{
+    fprintf(stderr,
+            "Usage:\n"
+            "  %s --self-test\n"
+            "\n"
+            "  %s [options]\n"
+            "\n"
+            "Options:\n"
+            "  --calibration PATH\n"
+            "      calibration JSON path\n"
+            "      default: %s\n"
+            "\n"
+            "  --pool-mib N\n"
+            "      central physical-page candidate pool size\n"
+            "      default: %u\n"
+            "\n"
+            "  --workset-mib N\n"
+            "      protected/high/low working-set size each\n"
+            "      default: %u\n"
+            "\n"
+            "  --classes N\n"
+            "      number of recovered bank classes in each group\n"
+            "      default: %u\n"
+            "\n"
+            "  --seconds N\n"
+            "      measurement seconds per condition\n"
+            "      default: %u\n"
+            "\n"
+            "  --victim-cpu N\n"
+            "      protected worker CPU\n"
+            "      default: %d\n"
+            "\n"
+            "  --aggressor-cpu N\n"
+            "      aggressor worker CPU\n"
+            "      default: %d\n"
+            "\n"
+            "  --seed N\n"
+            "      deterministic selection/shuffle seed\n"
+            "      default: %" PRIu64 "\n"
+            "\n"
+            "  --order LIST\n"
+            "      comma-separated condition order\n"
+            "      examples:\n"
+            "        none,high,low\n"
+            "        high,low,none\n"
+            "        high\n"
+            "\n"
+            "  --self-test\n"
+            "      functional test preset:\n"
+            "        pool      = %u MiB\n"
+            "        workset   = %u MiB each\n"
+            "        classes   = %u\n"
+            "        seconds   = %u per condition\n"
+            "        order     = none,high,low\n"
+            "\n",
+            prog,
+            prog,
+            DEFAULT_CALIBRATION_PATH,
+            DEFAULT_POOL_MIB,
+            DEFAULT_WORKSET_MIB,
+            DEFAULT_GROUP_CLASSES,
+            DEFAULT_SECONDS,
+            DEFAULT_VICTIM_CPU,
+            DEFAULT_AGGRESSOR_CPU,
+            (uint64_t)DEFAULT_SEED,
+            SELFTEST_POOL_MIB,
+            SELFTEST_WORKSET_MIB,
+            SELFTEST_GROUP_CLASSES,
+            SELFTEST_SECONDS);
+}
+
+static int parse_u64(const char *text, uint64_t *out)
+{
+    unsigned long long value;
+    char *endptr = NULL;
+
+    if (text == NULL || out == NULL || text[0] == '\0') {
+        return -1;
+    }
+
+    errno = 0;
+    value = strtoull(text, &endptr, 0);
+
+    if (errno != 0 ||
+        endptr == text ||
+        *endptr != '\0') {
+        return -1;
+    }
+
+    *out = (uint64_t)value;
+    return 0;
+}
+
+static int parse_size(const char *text, size_t *out)
+{
+    uint64_t value;
+
+    if (out == NULL) {
+        return -1;
+    }
+
+    if (parse_u64(text, &value) != 0) {
+        return -1;
+    }
+
+    if (value == 0U || value > (uint64_t)SIZE_MAX) {
+        return -1;
+    }
+
+    *out = (size_t)value;
+    return 0;
+}
+
+static int parse_uint(const char *text, unsigned int *out)
+{
+    uint64_t value;
+
+    if (out == NULL) {
+        return -1;
+    }
+
+    if (parse_u64(text, &value) != 0) {
+        return -1;
+    }
+
+    if (value == 0U || value > (uint64_t)UINT_MAX) {
+        return -1;
+    }
+
+    *out = (unsigned int)value;
+    return 0;
+}
+
+static int parse_int(const char *text, int *out)
+{
+    long value;
+    char *endptr = NULL;
+
+    if (text == NULL || out == NULL || text[0] == '\0') {
+        return -1;
+    }
+
+    errno = 0;
+    value = strtol(text, &endptr, 0);
+
+    if (errno != 0 ||
+        endptr == text ||
+        *endptr != '\0' ||
+        value < INT_MIN ||
+        value > INT_MAX) {
+        return -1;
+    }
+
+    *out = (int)value;
+    return 0;
+}
+
+static int parse_condition(
+    const char *text,
+    enum oracle_condition *condition)
+{
+    if (text == NULL || condition == NULL) {
+        return -1;
+    }
+
+    if (strcmp(text, "none") == 0) {
+        *condition = ORACLE_CONDITION_NONE;
+        return 0;
+    }
+
+    if (strcmp(text, "high") == 0) {
+        *condition = ORACLE_CONDITION_HIGH;
+        return 0;
+    }
+
+    if (strcmp(text, "low") == 0) {
+        *condition = ORACLE_CONDITION_LOW;
+        return 0;
+    }
+
+    return -1;
+}
+
+static int parse_order(
+    const char *text,
+    enum oracle_condition order[ORACLE_CONDITION_COUNT],
+    size_t *count_out)
+{
+    char buffer[128];
+    char *saveptr = NULL;
+    char *token;
+    bool seen[ORACLE_CONDITION_COUNT] = {false, false, false};
+    size_t count = 0U;
+    int n;
+
+    if (text == NULL || order == NULL || count_out == NULL) {
+        return -1;
+    }
+
+    n = snprintf(buffer, sizeof(buffer), "%s", text);
+    if (n <= 0 || (size_t)n >= sizeof(buffer)) {
+        return -1;
+    }
+
+    token = strtok_r(buffer, ",", &saveptr);
+
+    while (token != NULL) {
+        enum oracle_condition condition;
+
+        if (count >= ORACLE_CONDITION_COUNT) {
+            return -1;
+        }
+
+        if (parse_condition(token, &condition) != 0) {
+            return -1;
+        }
+
+        if (seen[(size_t)condition]) {
+            return -1;
+        }
+
+        seen[(size_t)condition] = true;
+        order[count++] = condition;
+
+        token = strtok_r(NULL, ",", &saveptr);
+    }
+
+    if (count == 0U) {
+        return -1;
+    }
+
+    *count_out = count;
+    return 0;
+}
+
+static void config_default(struct oracle_config *cfg)
+{
+    if (cfg == NULL) {
+        return;
+    }
+
+    memset(cfg, 0, sizeof(*cfg));
+
+    cfg->calibration_path = DEFAULT_CALIBRATION_PATH;
+
+    cfg->pool_mib = DEFAULT_POOL_MIB;
+    cfg->workset_mib = DEFAULT_WORKSET_MIB;
+    cfg->group_classes = DEFAULT_GROUP_CLASSES;
+
+    cfg->seconds = DEFAULT_SECONDS;
+
+    cfg->victim_cpu = DEFAULT_VICTIM_CPU;
+    cfg->aggressor_cpu = DEFAULT_AGGRESSOR_CPU;
+
+    cfg->seed = DEFAULT_SEED;
+
+    cfg->order[0] = ORACLE_CONDITION_NONE;
+    cfg->order[1] = ORACLE_CONDITION_HIGH;
+    cfg->order[2] = ORACLE_CONDITION_LOW;
+    cfg->order_count = 3U;
+
+    cfg->self_test = false;
+}
+
+static int parse_args(
+    int argc,
+    char **argv,
+    struct oracle_config *cfg)
+{
+    int i;
+
+    if (cfg == NULL) {
+        return -1;
+    }
+
+    config_default(cfg);
+
+    for (i = 1; i < argc; ++i) {
+        if (strcmp(argv[i], "--help") == 0 ||
+            strcmp(argv[i], "-h") == 0) {
+            usage(argv[0]);
+            exit(EXIT_SUCCESS);
+        }
+
+        if (strcmp(argv[i], "--self-test") == 0) {
+            cfg->self_test = true;
+            continue;
+        }
+
+        if (strcmp(argv[i], "--calibration") == 0) {
+            if (i + 1 >= argc) {
+                return -1;
+            }
+
+            cfg->calibration_path = argv[++i];
+            continue;
+        }
+
+        if (strcmp(argv[i], "--pool-mib") == 0) {
+            if (i + 1 >= argc ||
+                parse_size(argv[++i], &cfg->pool_mib) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--workset-mib") == 0) {
+            if (i + 1 >= argc ||
+                parse_size(argv[++i], &cfg->workset_mib) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--classes") == 0) {
+            if (i + 1 >= argc ||
+                parse_size(argv[++i], &cfg->group_classes) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--seconds") == 0) {
+            if (i + 1 >= argc ||
+                parse_uint(argv[++i], &cfg->seconds) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--victim-cpu") == 0) {
+            if (i + 1 >= argc ||
+                parse_int(argv[++i], &cfg->victim_cpu) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--aggressor-cpu") == 0) {
+            if (i + 1 >= argc ||
+                parse_int(argv[++i], &cfg->aggressor_cpu) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--seed") == 0) {
+            if (i + 1 >= argc ||
+                parse_u64(argv[++i], &cfg->seed) != 0 ||
+                cfg->seed == 0U) {
+                return -1;
+            }
+            continue;
+        }
+
+        if (strcmp(argv[i], "--order") == 0) {
+            if (i + 1 >= argc ||
+                parse_order(argv[++i],
+                            cfg->order,
+                            &cfg->order_count) != 0) {
+                return -1;
+            }
+            continue;
+        }
+
+        return -1;
+    }
+
+    /*
+     * self-test는 functional preset입니다.
+     *
+     * calibration path / CPU placement / seed는 사용자가
+     * override할 수 있도록 그대로 둡니다.
+     */
+    if (cfg->self_test) {
+        cfg->pool_mib = SELFTEST_POOL_MIB;
+        cfg->workset_mib = SELFTEST_WORKSET_MIB;
+        cfg->group_classes = SELFTEST_GROUP_CLASSES;
+        cfg->seconds = SELFTEST_SECONDS;
+
+        cfg->order[0] = ORACLE_CONDITION_NONE;
+        cfg->order[1] = ORACLE_CONDITION_HIGH;
+        cfg->order[2] = ORACLE_CONDITION_LOW;
+        cfg->order_count = 3U;
+    }
+
+    return 0;
+}
+
+static uint64_t rng_next(uint64_t *state)
+{
+    uint64_t x;
+
+    if (state == NULL) {
+        return 0U;
+    }
+
+    x = *state;
+
+    x ^= x >> 12U;
+    x ^= x << 25U;
+    x ^= x >> 27U;
+
+    *state = x;
+
+    return x * 2685821657736338717ULL;
+}
+
+static void shuffle_u32(
+    uint32_t *values,
+    size_t count,
+    uint64_t *rng_state)
+{
+    size_t i;
+
+    if (values == NULL || rng_state == NULL) {
+        return;
+    }
+
+    for (i = count; i > 1U; --i) {
+        size_t j =
+            (size_t)(rng_next(rng_state) % (uint64_t)i);
+
+        uint32_t tmp = values[i - 1U];
+        values[i - 1U] = values[j];
+        values[j] = tmp;
+    }
+}
+
+static void shuffle_selected(
+    struct selected_page *pages,
+    size_t count,
+    uint64_t *rng_state)
+{
+    size_t i;
+
+    if (pages == NULL || rng_state == NULL) {
+        return;
+    }
+
+    for (i = count; i > 1U; --i) {
+        size_t j =
+            (size_t)(rng_next(rng_state) % (uint64_t)i);
+
+        struct selected_page tmp = pages[i - 1U];
+        pages[i - 1U] = pages[j];
+        pages[j] = tmp;
+    }
+}
+
+static int write_full(
+    int fd,
+    const void *buffer,
+    size_t size)
+{
+    const unsigned char *p = buffer;
+    size_t done = 0U;
+
+    while (done < size) {
+        ssize_t rc = write(fd, p + done, size - done);
+
+        if (rc > 0) {
+            done += (size_t)rc;
+            continue;
+        }
+
+        if (rc < 0 && errno == EINTR) {
+            continue;
+        }
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static int read_full(
+    int fd,
+    void *buffer,
+    size_t size)
+{
+    unsigned char *p = buffer;
+    size_t done = 0U;
+
+    while (done < size) {
+        ssize_t rc = read(fd, p + done, size - done);
+
+        if (rc > 0) {
+            done += (size_t)rc;
+            continue;
+        }
+
+        if (rc < 0 && errno == EINTR) {
+            continue;
+        }
+
+        return -1;
+    }
+
+    return 0;
+}
+
+static double elapsed_sec(
+    const struct timespec *start,
+    const struct timespec *end)
+{
+    return
+        (double)(end->tv_sec - start->tv_sec) +
+        (double)(end->tv_nsec - start->tv_nsec) /
+            1000000000.0;
+}
+
+static int pin_to_cpu(int cpu)
+{
+    cpu_set_t set;
+
+    if (cpu < 0 || cpu >= CPU_SETSIZE) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    CPU_ZERO(&set);
+    CPU_SET(cpu, &set);
+
+    if (sched_setaffinity(0, sizeof(set), &set) != 0) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* Calibration / recovered bank mapping                      */
+/* --------------------------------------------------------- */
+
+static int load_mapping(
+    const char *path,
+    struct dram_mapping *mapping,
+    size_t *mask_count_out)
+{
+    struct calibration_result result;
+    int rc;
+    size_t i;
+
+    if (path == NULL ||
+        mapping == NULL ||
+        mask_count_out == NULL) {
+        return -1;
+    }
+
+    calibration_result_reset(&result);
+    dram_mapping_reset(mapping);
+
+    rc = calibration_load_result(path, &result);
+    if (rc != CALIBRATION_OK) {
+        fprintf(stderr,
+                "[ERROR] calibration_load_result(%s): %s\n",
+                path,
+                calibration_strerror(rc));
+
+        if (result.error_message[0] != '\0') {
+            fprintf(stderr,
+                    "[ERROR] calibration detail: %s\n",
+                    result.error_message);
+        }
+
+        return -1;
+    }
+
+    rc = dram_mapping_init_from_calibration(mapping, &result);
+    if (rc != DRAM_MAPPING_OK) {
+        fprintf(stderr,
+                "[ERROR] dram_mapping_init_from_calibration: %s\n",
+                dram_mapping_strerror(rc));
+        return -1;
+    }
+
+    if (result.bank_mask_count == 0U ||
+        result.bank_mask_count > MAX_ORACLE_MASKS) {
+        fprintf(stderr,
+                "[ERROR] oracle supports 1..%u masks; got %zu\n",
+                MAX_ORACLE_MASKS,
+                result.bank_mask_count);
+        return -1;
+    }
+
+    printf("[MAPPING] calibration=%s\n", path);
+    printf("[MAPPING] mask_set_id=%s\n", result.mask_set_id);
+    printf("[MAPPING] mask_count=%zu\n", result.bank_mask_count);
+
+    for (i = 0U; i < result.bank_mask_count; ++i) {
+        printf("[MAPPING] mask[%zu]=0x%016" PRIx64 "\n",
+               i,
+               result.bank_masks[i]);
+    }
+
+    *mask_count_out = result.bank_mask_count;
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* pagemap                                                   */
+/* --------------------------------------------------------- */
+
+static enum pfn_status read_pfn(
+    int pagemap_fd,
+    uintptr_t address,
+    size_t page_size,
+    uint64_t *pfn_out)
+{
+    uint64_t entry = 0U;
+    uint64_t page_index;
+    uint64_t offset_u64;
+    off_t offset;
+    ssize_t nread;
+
+    if (pagemap_fd < 0 ||
+        page_size == 0U ||
+        pfn_out == NULL) {
+        return PFN_STATUS_IO_ERROR;
+    }
+
+    page_index =
+        (uint64_t)address / (uint64_t)page_size;
+
+    if (page_index >
+        (uint64_t)INT64_MAX / sizeof(entry)) {
+        return PFN_STATUS_IO_ERROR;
+    }
+
+    offset_u64 =
+        page_index * (uint64_t)sizeof(entry);
+
+    offset = (off_t)offset_u64;
+
+    do {
+        nread = pread(pagemap_fd,
+                      &entry,
+                      sizeof(entry),
+                      offset);
+    } while (nread < 0 && errno == EINTR);
+
+    if (nread != (ssize_t)sizeof(entry)) {
+        return PFN_STATUS_IO_ERROR;
+    }
+
+    if ((entry & PAGEMAP_PRESENT_BIT) == 0U) {
+        if ((entry & PAGEMAP_SWAPPED_BIT) != 0U) {
+            return PFN_STATUS_SWAPPED;
+        }
+
+        return PFN_STATUS_NOT_PRESENT;
+    }
+
+    *pfn_out = entry & PAGEMAP_PFN_MASK;
+
+    /*
+     * CAP_SYS_ADMIN가 없을 때 present bit은 보이지만
+     * PFN field가 0으로 마스킹되는 경우를 fail-closed 처리합니다.
+     *
+     * 일반 userspace anonymous page가 실제 PFN 0일 가능성은
+     * 본 실험 환경에서는 사실상 고려하지 않습니다.
+     */
+    if (*pfn_out == 0U) {
+        return PFN_STATUS_UNAVAILABLE;
+    }
+
+    return PFN_STATUS_OK;
+}
+
+static int classify_pool(
+    unsigned char *pool,
+    size_t pool_pages,
+    size_t page_size,
+    const struct dram_mapping *mapping,
+    struct pool_page *page_info,
+    size_t *class_counts,
+    size_t class_count,
+    size_t *valid_pages_out)
+{
+    int pagemap_fd;
+    size_t i;
+
+    size_t valid = 0U;
+    size_t not_present = 0U;
+    size_t swapped = 0U;
+    size_t unavailable = 0U;
+
+    if (pool == NULL ||
+        pool_pages == 0U ||
+        page_size == 0U ||
+        mapping == NULL ||
+        page_info == NULL ||
+        class_counts == NULL ||
+        class_count == 0U ||
+        valid_pages_out == NULL) {
+        return -1;
+    }
+
+    pagemap_fd =
+        open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
+
+    if (pagemap_fd < 0) {
+        perror("open /proc/self/pagemap");
+        return -1;
+    }
+
+    for (i = 0U; i < pool_pages; ++i) {
+        uintptr_t address =
+            (uintptr_t)(pool + i * page_size);
+
+        uint64_t pfn = 0U;
+        uint64_t physical_address;
+        uint64_t bank_class = 0U;
+
+        enum pfn_status status;
+
+        status =
+            read_pfn(pagemap_fd,
+                     address,
+                     page_size,
+                     &pfn);
+
+        if (status == PFN_STATUS_NOT_PRESENT) {
+            not_present++;
+            continue;
+        }
+
+        if (status == PFN_STATUS_SWAPPED) {
+            swapped++;
+            continue;
+        }
+
+        if (status == PFN_STATUS_UNAVAILABLE) {
+            unavailable++;
+            continue;
+        }
+
+        if (status != PFN_STATUS_OK) {
+            fprintf(stderr,
+                    "[ERROR] pagemap read failed at page %zu\n",
+                    i);
+            (void)close(pagemap_fd);
+            return -1;
+        }
+
+        if (pfn >
+            UINT64_MAX / (uint64_t)page_size) {
+            fprintf(stderr,
+                    "[ERROR] PFN to PA overflow\n");
+            (void)close(pagemap_fd);
+            return -1;
+        }
+
+        physical_address =
+            pfn * (uint64_t)page_size;
+
+        if (dram_mapping_bank_class(mapping,
+                                    physical_address,
+                                    &bank_class)
+            != DRAM_MAPPING_OK) {
+            fprintf(stderr,
+                    "[ERROR] dram_mapping_bank_class failed\n");
+            (void)close(pagemap_fd);
+            return -1;
+        }
+
+        if (bank_class >= (uint64_t)class_count) {
+            fprintf(stderr,
+                    "[ERROR] invalid bank class 0x%" PRIx64
+                    " >= %zu\n",
+                    bank_class,
+                    class_count);
+            (void)close(pagemap_fd);
+            return -1;
+        }
+
+        page_info[i].pfn = pfn;
+        page_info[i].bank_class =
+            (uint32_t)bank_class;
+        page_info[i].valid = true;
+
+        class_counts[(size_t)bank_class]++;
+        valid++;
+    }
+
+    (void)close(pagemap_fd);
+
+    printf("[PAGEMAP] pool_pages=%zu\n", pool_pages);
+    printf("[PAGEMAP] valid_pages=%zu\n", valid);
+    printf("[PAGEMAP] not_present=%zu\n", not_present);
+    printf("[PAGEMAP] swapped=%zu\n", swapped);
+    printf("[PAGEMAP] pfn_unavailable=%zu\n", unavailable);
+
+    if (valid == 0U) {
+        fprintf(stderr,
+                "[ERROR] no usable PFNs\n"
+                "[HINT] run this experiment with sudo/root "
+                "or CAP_SYS_ADMIN.\n");
+        return -1;
+    }
+
+    if (unavailable > 0U &&
+        unavailable >= pool_pages / 2U) {
+        fprintf(stderr,
+                "[ERROR] most PFNs are unavailable.\n"
+                "[HINT] run with sudo/root.\n");
+        return -1;
+    }
+
+    *valid_pages_out = valid;
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* Central page selection                                    */
+/* --------------------------------------------------------- */
+
+static void selection_reset(
+    struct oracle_selection *selection)
+{
+    if (selection == NULL) {
+        return;
+    }
+
+    memset(selection, 0, sizeof(*selection));
+}
+
+static void selection_destroy(
+    struct oracle_selection *selection)
+{
+    if (selection == NULL) {
+        return;
+    }
+
+    free(selection->victim);
+    free(selection->high);
+    free(selection->low);
+
+    free(selection->overlap_classes);
+    free(selection->low_classes);
+    free(selection->quota);
+
+    selection_reset(selection);
+}
+
+static ssize_t find_class_index(
+    const uint32_t *classes,
+    size_t count,
+    uint32_t bank_class)
+{
+    size_t i;
+
+    if (classes == NULL) {
+        return -1;
+    }
+
+    for (i = 0U; i < count; ++i) {
+        if (classes[i] == bank_class) {
+            return (ssize_t)i;
+        }
+    }
+
+    return -1;
+}
+
+static int build_selection(
+    unsigned char *pool,
+    const struct pool_page *page_info,
+    size_t pool_pages,
+    size_t page_size,
+    const size_t *class_counts,
+    size_t class_count,
+    size_t workset_pages,
+    size_t group_classes,
+    uint64_t *rng_state,
+    struct oracle_selection *selection)
+{
+    uint32_t *class_ids = NULL;
+    bool *is_overlap_class = NULL;
+
+    size_t *victim_fill = NULL;
+    size_t *high_fill = NULL;
+    size_t *low_fill = NULL;
+
+    size_t quota_base;
+    size_t quota_remainder;
+    size_t quota_max;
+
+    size_t selected_overlap_classes = 0U;
+    size_t selected_low_classes = 0U;
+
+    size_t eligible_high = 0U;
+    size_t eligible_low = 0U;
+
+    size_t victim_pos = 0U;
+    size_t high_pos = 0U;
+    size_t low_pos = 0U;
+
+    size_t i;
+
+    if (pool == NULL ||
+        page_info == NULL ||
+        pool_pages == 0U ||
+        page_size == 0U ||
+        class_counts == NULL ||
+        class_count == 0U ||
+        workset_pages == 0U ||
+        group_classes == 0U ||
+        rng_state == NULL ||
+        selection == NULL) {
+        return -1;
+    }
+
+    if (group_classes > workset_pages) {
+        fprintf(stderr,
+                "[ERROR] classes=%zu > workset_pages=%zu\n",
+                group_classes,
+                workset_pages);
+        return -1;
+    }
+
+    if (group_classes > class_count / 2U) {
+        fprintf(stderr,
+                "[ERROR] need disjoint HIGH/LOW class groups: "
+                "classes=%zu class_count=%zu\n",
+                group_classes,
+                class_count);
+        return -1;
+    }
+
+    selection_reset(selection);
+
+    quota_base =
+        workset_pages / group_classes;
+
+    quota_remainder =
+        workset_pages % group_classes;
+
+    quota_max =
+        quota_base +
+        (quota_remainder > 0U ? 1U : 0U);
+
+    if (quota_max == 0U ||
+        quota_max > SIZE_MAX / 2U) {
+        return -1;
+    }
+
+    for (i = 0U; i < class_count; ++i) {
+        if (class_counts[i] >= 2U * quota_max) {
+            eligible_high++;
+        }
+
+        if (class_counts[i] >= quota_max) {
+            eligible_low++;
+        }
+    }
+
+    printf("[SELECT] workset_pages=%zu\n",
+           workset_pages);
+    printf("[SELECT] group_classes=%zu\n",
+           group_classes);
+    printf("[SELECT] quota_base=%zu\n",
+           quota_base);
+    printf("[SELECT] quota_max=%zu\n",
+           quota_max);
+    printf("[SELECT] eligible_high_classes=%zu\n",
+           eligible_high);
+    printf("[SELECT] eligible_low_classes=%zu\n",
+           eligible_low);
+
+    class_ids =
+        calloc(class_count, sizeof(*class_ids));
+
+    is_overlap_class =
+        calloc(class_count, sizeof(*is_overlap_class));
+
+    selection->victim =
+        calloc(workset_pages,
+               sizeof(*selection->victim));
+
+    selection->high =
+        calloc(workset_pages,
+               sizeof(*selection->high));
+
+    selection->low =
+        calloc(workset_pages,
+               sizeof(*selection->low));
+
+    selection->overlap_classes =
+        calloc(group_classes,
+               sizeof(*selection->overlap_classes));
+
+    selection->low_classes =
+        calloc(group_classes,
+               sizeof(*selection->low_classes));
+
+    selection->quota =
+        calloc(group_classes,
+               sizeof(*selection->quota));
+
+    victim_fill =
+        calloc(group_classes, sizeof(*victim_fill));
+
+    high_fill =
+        calloc(group_classes, sizeof(*high_fill));
+
+    low_fill =
+        calloc(group_classes, sizeof(*low_fill));
+
+    if (class_ids == NULL ||
+        is_overlap_class == NULL ||
+        selection->victim == NULL ||
+        selection->high == NULL ||
+        selection->low == NULL ||
+        selection->overlap_classes == NULL ||
+        selection->low_classes == NULL ||
+        selection->quota == NULL ||
+        victim_fill == NULL ||
+        high_fill == NULL ||
+        low_fill == NULL) {
+        fprintf(stderr,
+                "[ERROR] selection allocation failed\n");
+        goto fail;
+    }
+
+    selection->page_count = workset_pages;
+    selection->class_group_count =
+        group_classes;
+
+    for (i = 0U; i < group_classes; ++i) {
+        selection->quota[i] =
+            quota_base +
+            (i < quota_remainder ? 1U : 0U);
+    }
+
+    for (i = 0U; i < class_count; ++i) {
+        class_ids[i] = (uint32_t)i;
+    }
+
+    shuffle_u32(class_ids,
+                class_count,
+                rng_state);
+
+    /*
+     * HIGH-overlap class group:
+     *
+     * 한 class마다 victim quota + high quota가 모두 필요하므로
+     * 최소 2 * quota_max page가 존재하는 class만 사용합니다.
+     */
+    for (i = 0U;
+         i < class_count &&
+         selected_overlap_classes < group_classes;
+         ++i) {
+        uint32_t cls = class_ids[i];
+
+        if (class_counts[cls] <
+            2U * quota_max) {
+            continue;
+        }
+
+        selection->overlap_classes[
+            selected_overlap_classes] = cls;
+
+        is_overlap_class[cls] = true;
+        selected_overlap_classes++;
+    }
+
+    if (selected_overlap_classes !=
+        group_classes) {
+        fprintf(stderr,
+                "[ERROR] not enough bank classes for "
+                "HIGH overlap.\n"
+                "[HINT] increase --pool-mib or reduce "
+                "--workset-mib / --classes.\n");
+        goto fail;
+    }
+
+    /*
+     * LOW-overlap class group:
+     *
+     * victim/high group과 완전히 다른 recovered class만 사용합니다.
+     */
+    for (i = 0U;
+         i < class_count &&
+         selected_low_classes < group_classes;
+         ++i) {
+        uint32_t cls = class_ids[i];
+
+        if (is_overlap_class[cls]) {
+            continue;
+        }
+
+        if (class_counts[cls] < quota_max) {
+            continue;
+        }
+
+        selection->low_classes[
+            selected_low_classes] = cls;
+
+        selected_low_classes++;
+    }
+
+    if (selected_low_classes !=
+        group_classes) {
+        fprintf(stderr,
+                "[ERROR] not enough disjoint bank classes "
+                "for LOW overlap.\n"
+                "[HINT] increase --pool-mib or reduce "
+                "--workset-mib / --classes.\n");
+        goto fail;
+    }
+
+    for (i = 0U; i < group_classes; ++i) {
+        uint32_t overlap_cls =
+            selection->overlap_classes[i];
+
+        uint32_t low_cls =
+            selection->low_classes[i];
+
+        printf("[CLASS] slot=%zu "
+               "overlap_class=0x%x "
+               "overlap_pool_pages=%zu "
+               "low_class=0x%x "
+               "low_pool_pages=%zu "
+               "quota=%zu\n",
+               i,
+               overlap_cls,
+               class_counts[overlap_cls],
+               low_cls,
+               class_counts[low_cls],
+               selection->quota[i]);
+    }
+
+    /*
+     * 모든 selected page는 이 parent process의 동일 pool에서만
+     * 가져옵니다.
+     *
+     * victim / high는 같은 class histogram을 가지지만
+     * 실제 PFN은 서로 다른 page입니다.
+     *
+     * victim과 high page를 가능한 한 번갈아 할당하여
+     * pool address range 한쪽으로 몰리는 것도 줄입니다.
+     */
+    for (i = 0U; i < pool_pages; ++i) {
+        uint32_t cls;
+        ssize_t slot;
+
+        struct selected_page selected;
+
+        if (!page_info[i].valid) {
+            continue;
+        }
+
+        cls = page_info[i].bank_class;
+
+        selected.address =
+            (uintptr_t)(pool + i * page_size);
+
+        selected.pfn =
+            page_info[i].pfn;
+
+        selected.bank_class = cls;
+
+        slot =
+            find_class_index(
+                selection->overlap_classes,
+                group_classes,
+                cls);
+
+        if (slot >= 0) {
+            size_t s = (size_t)slot;
+            size_t q = selection->quota[s];
+
+            if (victim_fill[s] < q ||
+                high_fill[s] < q) {
+
+                if (victim_fill[s] < q &&
+                    (high_fill[s] >= q ||
+                     victim_fill[s] <= high_fill[s])) {
+
+                    selection->victim[victim_pos++] =
+                        selected;
+
+                    victim_fill[s]++;
+                } else if (high_fill[s] < q) {
+                    selection->high[high_pos++] =
+                        selected;
+
+                    high_fill[s]++;
+                }
+            }
+
+            continue;
+        }
+
+        slot =
+            find_class_index(
+                selection->low_classes,
+                group_classes,
+                cls);
+
+        if (slot >= 0) {
+            size_t s = (size_t)slot;
+            size_t q = selection->quota[s];
+
+            if (low_fill[s] < q) {
+                selection->low[low_pos++] =
+                    selected;
+
+                low_fill[s]++;
+            }
+        }
+    }
+
+    if (victim_pos != workset_pages ||
+        high_pos != workset_pages ||
+        low_pos != workset_pages) {
+        fprintf(stderr,
+                "[ERROR] selection incomplete: "
+                "victim=%zu high=%zu low=%zu "
+                "expected=%zu\n",
+                victim_pos,
+                high_pos,
+                low_pos,
+                workset_pages);
+        goto fail;
+    }
+
+    for (i = 0U; i < group_classes; ++i) {
+        if (victim_fill[i] != selection->quota[i] ||
+            high_fill[i] != selection->quota[i] ||
+            low_fill[i] != selection->quota[i]) {
+            fprintf(stderr,
+                    "[ERROR] class quota mismatch "
+                    "at slot=%zu\n",
+                    i);
+            goto fail;
+        }
+    }
+
+    free(class_ids);
+    free(is_overlap_class);
+    free(victim_fill);
+    free(high_fill);
+    free(low_fill);
+
+    return 0;
+
+fail:
+    free(class_ids);
+    free(is_overlap_class);
+    free(victim_fill);
+    free(high_fill);
+    free(low_fill);
+
+    selection_destroy(selection);
+    return -1;
+}
+
+static int compute_overlap(
+    const struct selected_page *a,
+    const struct selected_page *b,
+    size_t page_count,
+    size_t class_count,
+    uint64_t *intersection_out,
+    uint64_t *union_out,
+    double *jaccard_out)
+{
+    uint64_t *hist_a = NULL;
+    uint64_t *hist_b = NULL;
+
+    uint64_t intersection = 0U;
+    uint64_t union_count = 0U;
+
+    size_t i;
+
+    if (a == NULL ||
+        b == NULL ||
+        page_count == 0U ||
+        class_count == 0U ||
+        intersection_out == NULL ||
+        union_out == NULL ||
+        jaccard_out == NULL) {
+        return -1;
+    }
+
+    hist_a =
+        calloc(class_count, sizeof(*hist_a));
+
+    hist_b =
+        calloc(class_count, sizeof(*hist_b));
+
+    if (hist_a == NULL || hist_b == NULL) {
+        free(hist_a);
+        free(hist_b);
+        return -1;
+    }
+
+    for (i = 0U; i < page_count; ++i) {
+        if ((size_t)a[i].bank_class >= class_count ||
+            (size_t)b[i].bank_class >= class_count) {
+            free(hist_a);
+            free(hist_b);
+            return -1;
+        }
+
+        hist_a[a[i].bank_class]++;
+        hist_b[b[i].bank_class]++;
+    }
+
+    for (i = 0U; i < class_count; ++i) {
+        uint64_t x = hist_a[i];
+        uint64_t y = hist_b[i];
+
+        intersection += x < y ? x : y;
+        union_count += x > y ? x : y;
+    }
+
+    free(hist_a);
+    free(hist_b);
+
+    if (union_count == 0U) {
+        return -1;
+    }
+
+    *intersection_out = intersection;
+    *union_out = union_count;
+    *jaccard_out =
+        (double)intersection /
+        (double)union_count;
+
+    return 0;
+}
+
+static int validate_selection_overlap(
+    const struct oracle_selection *selection,
+    size_t class_count)
+{
+    uint64_t high_intersection = 0U;
+    uint64_t high_union = 0U;
+    double high_jaccard = 0.0;
+
+    uint64_t low_intersection = 0U;
+    uint64_t low_union = 0U;
+    double low_jaccard = 0.0;
+
+    if (selection == NULL ||
+        selection->page_count == 0U) {
+        return -1;
+    }
+
+    if (compute_overlap(selection->victim,
+                        selection->high,
+                        selection->page_count,
+                        class_count,
+                        &high_intersection,
+                        &high_union,
+                        &high_jaccard) != 0) {
+        return -1;
+    }
+
+    if (compute_overlap(selection->victim,
+                        selection->low,
+                        selection->page_count,
+                        class_count,
+                        &low_intersection,
+                        &low_union,
+                        &low_jaccard) != 0) {
+        return -1;
+    }
+
+    printf("[OVERLAP] victim_vs_high "
+           "intersection=%" PRIu64 " "
+           "union=%" PRIu64 " "
+           "weighted_jaccard=%.6f\n",
+           high_intersection,
+           high_union,
+           high_jaccard);
+
+    printf("[OVERLAP] victim_vs_low "
+           "intersection=%" PRIu64 " "
+           "union=%" PRIu64 " "
+           "weighted_jaccard=%.6f\n",
+           low_intersection,
+           low_union,
+           low_jaccard);
+
+    /*
+     * HIGH:
+     * victim과 histogram이 정확히 동일해야 함.
+     */
+    if (high_intersection !=
+            (uint64_t)selection->page_count ||
+        high_union !=
+            (uint64_t)selection->page_count) {
+
+        fprintf(stderr,
+                "[ERROR] HIGH overlap is not exactly 1.0\n");
+        return -1;
+    }
+
+    /*
+     * LOW:
+     * class support가 완전히 disjoint여야 함.
+     */
+    if (low_intersection != 0U) {
+        fprintf(stderr,
+                "[ERROR] LOW overlap is not exactly 0.0\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int build_victim_pointer_cycle(
+    struct selected_page *victim,
+    size_t page_count,
+    uint64_t *rng_state)
+{
+    size_t i;
+
+    if (victim == NULL ||
+        page_count == 0U ||
+        rng_state == NULL) {
+        return -1;
+    }
+
+    shuffle_selected(victim,
+                     page_count,
+                     rng_state);
+
+    for (i = 0U; i < page_count; ++i) {
+        uintptr_t next_address =
+            victim[(i + 1U) % page_count].address;
+
+        memcpy((void *)victim[i].address,
+               &next_address,
+               sizeof(next_address));
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* Revalidate exact PFNs                                     */
+/* --------------------------------------------------------- */
+
+static int verify_one_set(
+    int pagemap_fd,
+    const struct selected_page *pages,
+    size_t page_count,
+    size_t page_size,
+    const struct dram_mapping *mapping,
+    size_t *moved_out,
+    size_t *class_changed_out,
+    size_t *unreadable_out)
+{
+    size_t moved = 0U;
+    size_t class_changed = 0U;
+    size_t unreadable = 0U;
+
+    size_t i;
+
+    if (pages == NULL ||
+        page_count == 0U ||
+        page_size == 0U ||
+        mapping == NULL ||
+        moved_out == NULL ||
+        class_changed_out == NULL ||
+        unreadable_out == NULL) {
+        return -1;
+    }
+
+    for (i = 0U; i < page_count; ++i) {
+        uint64_t pfn = 0U;
+        uint64_t pa;
+        uint64_t cls = 0U;
+
+        enum pfn_status status;
+
+        status =
+            read_pfn(pagemap_fd,
+                     pages[i].address,
+                     page_size,
+                     &pfn);
+
+        if (status != PFN_STATUS_OK) {
+            unreadable++;
+            continue;
+        }
+
+        if (pfn != pages[i].pfn) {
+            moved++;
+        }
+
+        if (pfn > UINT64_MAX /
+                      (uint64_t)page_size) {
+            unreadable++;
+            continue;
+        }
+
+        pa = pfn * (uint64_t)page_size;
+
+        if (dram_mapping_bank_class(mapping,
+                                    pa,
+                                    &cls)
+            != DRAM_MAPPING_OK) {
+            unreadable++;
+            continue;
+        }
+
+        if (cls !=
+            (uint64_t)pages[i].bank_class) {
+            class_changed++;
+        }
+    }
+
+    *moved_out = moved;
+    *class_changed_out = class_changed;
+    *unreadable_out = unreadable;
+
+    return 0;
+}
+
+static int verify_selection(
+    const char *phase,
+    const struct oracle_selection *selection,
+    size_t page_size,
+    const struct dram_mapping *mapping)
+{
+    int pagemap_fd;
+
+    size_t moved_v = 0U;
+    size_t changed_v = 0U;
+    size_t unreadable_v = 0U;
+
+    size_t moved_h = 0U;
+    size_t changed_h = 0U;
+    size_t unreadable_h = 0U;
+
+    size_t moved_l = 0U;
+    size_t changed_l = 0U;
+    size_t unreadable_l = 0U;
+
+    size_t total_moved;
+    size_t total_changed;
+    size_t total_unreadable;
+
+    if (phase == NULL ||
+        selection == NULL ||
+        mapping == NULL) {
+        return -1;
+    }
+
+    pagemap_fd =
+        open("/proc/self/pagemap",
+             O_RDONLY | O_CLOEXEC);
+
+    if (pagemap_fd < 0) {
+        perror("open /proc/self/pagemap");
+        return -1;
+    }
+
+    if (verify_one_set(
+            pagemap_fd,
+            selection->victim,
+            selection->page_count,
+            page_size,
+            mapping,
+            &moved_v,
+            &changed_v,
+            &unreadable_v) != 0 ||
+        verify_one_set(
+            pagemap_fd,
+            selection->high,
+            selection->page_count,
+            page_size,
+            mapping,
+            &moved_h,
+            &changed_h,
+            &unreadable_h) != 0 ||
+        verify_one_set(
+            pagemap_fd,
+            selection->low,
+            selection->page_count,
+            page_size,
+            mapping,
+            &moved_l,
+            &changed_l,
+            &unreadable_l) != 0) {
+
+        (void)close(pagemap_fd);
+        return -1;
+    }
+
+    (void)close(pagemap_fd);
+
+    total_moved =
+        moved_v + moved_h + moved_l;
+
+    total_changed =
+        changed_v + changed_h + changed_l;
+
+    total_unreadable =
+        unreadable_v +
+        unreadable_h +
+        unreadable_l;
+
+    printf("[VERIFY] phase=%s "
+           "pfn_moved=%zu "
+           "class_changed=%zu "
+           "unreadable=%zu\n",
+           phase,
+           total_moved,
+           total_changed,
+           total_unreadable);
+
+    /*
+     * Oracle experiment에서는 page migration도 허용하지 않습니다.
+     *
+     * 같은 recovered class로 이동했더라도
+     * "선택했던 physical page가 그대로 유지되었는가"를
+     * 엄격하게 확인합니다.
+     */
+    if (total_moved != 0U ||
+        total_changed != 0U ||
+        total_unreadable != 0U) {
+
+        fprintf(stderr,
+                "[ERROR] selected physical pages changed "
+                "during oracle experiment\n");
+        return -1;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* Worker implementations                                    */
+/* --------------------------------------------------------- */
+
+static int victim_worker(
+    const struct selected_page *pages,
+    size_t page_count,
+    unsigned int seconds,
+    int cpu,
+    int ready_fd,
+    int start_fd,
+    int result_fd)
+{
+    struct victim_result result;
+
+    uintptr_t current;
+
+    struct timespec start;
+    struct timespec now;
+
+    const uint64_t chunk_reads = 10000U;
+
+    char ready = 'R';
+    char start_byte = '\0';
+
+    size_t i;
+
+    memset(&result, 0, sizeof(result));
+
+    if (pages == NULL || page_count == 0U) {
+        result.rc = EINVAL;
+        ready = 'E';
+
+        (void)write_full(ready_fd,
+                         &ready,
+                         sizeof(ready));
+
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+
+        return -1;
+    }
+
+    if (pin_to_cpu(cpu) != 0) {
+        result.rc = errno;
+        ready = 'E';
+
+        (void)write_full(ready_fd,
+                         &ready,
+                         sizeof(ready));
+
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+
+        return -1;
+    }
+
+    current = pages[0].address;
+
+    /*
+     * One full pointer-chase warmup.
+     *
+     * child는 selected page를 읽기만 하므로
+     * fork 이후 COW를 발생시키지 않습니다.
+     */
+    for (i = 0U; i < page_count; ++i) {
+        current =
+            *(const volatile uintptr_t *)
+                (uintptr_t)current;
+    }
+
+    if (write_full(ready_fd,
+                   &ready,
+                   sizeof(ready)) != 0) {
+        return -1;
+    }
+
+    if (read_full(start_fd,
+                  &start_byte,
+                  sizeof(start_byte)) != 0 ||
+        start_byte != 'S') {
+        return -1;
+    }
+
+    if (clock_gettime(CLOCK_MONOTONIC_RAW,
+                      &start) != 0) {
+        result.rc = errno;
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+        return -1;
+    }
+
+    now = start;
+
+    for (;;) {
+        uint64_t j;
+
+        for (j = 0U; j < chunk_reads; ++j) {
+            current =
+                *(const volatile uintptr_t *)
+                    (uintptr_t)current;
+        }
+
+        result.reads += chunk_reads;
+
+        if (clock_gettime(CLOCK_MONOTONIC_RAW,
+                          &now) != 0) {
+            result.rc = errno;
+            break;
+        }
+
+        if (elapsed_sec(&start, &now) >=
+            (double)seconds) {
+            break;
+        }
+    }
+
+    result.elapsed_sec =
+        elapsed_sec(&start, &now);
+
+    result.final_address = current;
+
+    if (result.rc == 0 &&
+        result.reads > 0U &&
+        result.elapsed_sec > 0.0) {
+
+        result.ns_per_read =
+            result.elapsed_sec *
+            1000000000.0 /
+            (double)result.reads;
+    }
+
+    if (write_full(result_fd,
+                   &result,
+                   sizeof(result)) != 0) {
+        return -1;
+    }
+
+    return result.rc == 0 ? 0 : -1;
+}
+
+static void aggressor_scan_pass(
+    const struct selected_page *pages,
+    size_t page_count,
+    size_t page_size,
+    uint64_t *checksum,
+    uint64_t *load_ops)
+{
+    size_t i;
+    size_t offset;
+
+    if (pages == NULL ||
+        checksum == NULL ||
+        load_ops == NULL) {
+        return;
+    }
+
+    for (i = 0U; i < page_count; ++i) {
+        uintptr_t base = pages[i].address;
+
+        for (offset = 0U;
+             offset < page_size;
+             offset += CACHELINE_BYTES) {
+
+            const volatile uint64_t *word =
+                (const volatile uint64_t *)
+                    (uintptr_t)(base + offset);
+
+            *checksum += *word;
+            (*load_ops)++;
+        }
+    }
+}
+
+static int aggressor_worker(
+    const struct selected_page *pages,
+    size_t page_count,
+    size_t page_size,
+    unsigned int seconds,
+    int cpu,
+    int ready_fd,
+    int start_fd,
+    int result_fd)
+{
+    struct aggressor_result result;
+
+    struct timespec start;
+    struct timespec now;
+
+    uint64_t warm_checksum = 0U;
+    uint64_t warm_loads = 0U;
+
+    char ready = 'R';
+    char start_byte = '\0';
+
+    memset(&result, 0, sizeof(result));
+
+    if (pages == NULL ||
+        page_count == 0U ||
+        page_size == 0U) {
+
+        result.rc = EINVAL;
+        ready = 'E';
+
+        (void)write_full(ready_fd,
+                         &ready,
+                         sizeof(ready));
+
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+
+        return -1;
+    }
+
+    if (pin_to_cpu(cpu) != 0) {
+        result.rc = errno;
+        ready = 'E';
+
+        (void)write_full(ready_fd,
+                         &ready,
+                         sizeof(ready));
+
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+
+        return -1;
+    }
+
+    /*
+     * One full scan warmup.
+     */
+    aggressor_scan_pass(
+        pages,
+        page_count,
+        page_size,
+        &warm_checksum,
+        &warm_loads);
+
+    result.checksum ^= warm_checksum;
+
+    if (write_full(ready_fd,
+                   &ready,
+                   sizeof(ready)) != 0) {
+        return -1;
+    }
+
+    if (read_full(start_fd,
+                  &start_byte,
+                  sizeof(start_byte)) != 0 ||
+        start_byte != 'S') {
+        return -1;
+    }
+
+    if (clock_gettime(CLOCK_MONOTONIC_RAW,
+                      &start) != 0) {
+        result.rc = errno;
+        (void)write_full(result_fd,
+                         &result,
+                         sizeof(result));
+        return -1;
+    }
+
+    now = start;
+
+    for (;;) {
+        aggressor_scan_pass(
+            pages,
+            page_count,
+            page_size,
+            &result.checksum,
+            &result.load_ops);
+
+        result.passes++;
+
+        if (clock_gettime(CLOCK_MONOTONIC_RAW,
+                          &now) != 0) {
+            result.rc = errno;
+            break;
+        }
+
+        if (elapsed_sec(&start, &now) >=
+            (double)seconds) {
+            break;
+        }
+    }
+
+    result.elapsed_sec =
+        elapsed_sec(&start, &now);
+
+    if (write_full(result_fd,
+                   &result,
+                   sizeof(result)) != 0) {
+        return -1;
+    }
+
+    return result.rc == 0 ? 0 : -1;
+}
+
+/* --------------------------------------------------------- */
+/* Worker process management                                 */
+/* --------------------------------------------------------- */
+
+static void channel_reset(
+    struct child_channel *channel)
+{
+    if (channel == NULL) {
+        return;
+    }
+
+    channel->pid = -1;
+    channel->ready_fd = -1;
+    channel->start_fd = -1;
+    channel->result_fd = -1;
+}
+
+static void close_fd(int *fd)
+{
+    if (fd == NULL || *fd < 0) {
+        return;
+    }
+
+    (void)close(*fd);
+    *fd = -1;
+}
+
+static void abort_channel(
+    struct child_channel *channel)
+{
+    if (channel == NULL) {
+        return;
+    }
+
+    if (channel->pid > 0) {
+        (void)kill(channel->pid, SIGKILL);
+
+        while (waitpid(channel->pid,
+                       NULL,
+                       0) < 0 &&
+               errno == EINTR) {
+        }
+    }
+
+    close_fd(&channel->ready_fd);
+    close_fd(&channel->start_fd);
+    close_fd(&channel->result_fd);
+
+    channel->pid = -1;
+}
+
+static int create_worker_pipes(
+    int ready_pipe[2],
+    int start_pipe[2],
+    int result_pipe[2])
+{
+    if (pipe(ready_pipe) != 0) {
+        return -1;
+    }
+
+    if (pipe(start_pipe) != 0) {
+        (void)close(ready_pipe[0]);
+        (void)close(ready_pipe[1]);
+        return -1;
+    }
+
+    if (pipe(result_pipe) != 0) {
+        (void)close(ready_pipe[0]);
+        (void)close(ready_pipe[1]);
+        (void)close(start_pipe[0]);
+        (void)close(start_pipe[1]);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int spawn_victim(
+    const struct selected_page *pages,
+    size_t page_count,
+    unsigned int seconds,
+    int cpu,
+    struct child_channel *channel)
+{
+    int ready_pipe[2] = {-1, -1};
+    int start_pipe[2] = {-1, -1};
+    int result_pipe[2] = {-1, -1};
+
+    pid_t pid;
+
+    if (channel == NULL) {
+        return -1;
+    }
+
+    channel_reset(channel);
+
+    if (create_worker_pipes(
+            ready_pipe,
+            start_pipe,
+            result_pipe) != 0) {
+        perror("pipe");
+        return -1;
+    }
+
+    fflush(NULL);
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("fork victim");
+
+        (void)close(ready_pipe[0]);
+        (void)close(ready_pipe[1]);
+        (void)close(start_pipe[0]);
+        (void)close(start_pipe[1]);
+        (void)close(result_pipe[0]);
+        (void)close(result_pipe[1]);
+
+        return -1;
+    }
+
+    if (pid == 0) {
+        int rc;
+
+        (void)close(ready_pipe[0]);
+        (void)close(start_pipe[1]);
+        (void)close(result_pipe[0]);
+
+        rc =
+            victim_worker(
+                pages,
+                page_count,
+                seconds,
+                cpu,
+                ready_pipe[1],
+                start_pipe[0],
+                result_pipe[1]);
+
+        (void)close(ready_pipe[1]);
+        (void)close(start_pipe[0]);
+        (void)close(result_pipe[1]);
+
+        _exit(rc == 0 ?
+              EXIT_SUCCESS :
+              EXIT_FAILURE);
+    }
+
+    (void)close(ready_pipe[1]);
+    (void)close(start_pipe[0]);
+    (void)close(result_pipe[1]);
+
+    channel->pid = pid;
+    channel->ready_fd = ready_pipe[0];
+    channel->start_fd = start_pipe[1];
+    channel->result_fd = result_pipe[0];
+
+    return 0;
+}
+
+static int spawn_aggressor(
+    const struct selected_page *pages,
+    size_t page_count,
+    size_t page_size,
+    unsigned int seconds,
+    int cpu,
+    struct child_channel *channel)
+{
+    int ready_pipe[2] = {-1, -1};
+    int start_pipe[2] = {-1, -1};
+    int result_pipe[2] = {-1, -1};
+
+    pid_t pid;
+
+    if (channel == NULL) {
+        return -1;
+    }
+
+    channel_reset(channel);
+
+    if (create_worker_pipes(
+            ready_pipe,
+            start_pipe,
+            result_pipe) != 0) {
+        perror("pipe");
+        return -1;
+    }
+
+    fflush(NULL);
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("fork aggressor");
+
+        (void)close(ready_pipe[0]);
+        (void)close(ready_pipe[1]);
+        (void)close(start_pipe[0]);
+        (void)close(start_pipe[1]);
+        (void)close(result_pipe[0]);
+        (void)close(result_pipe[1]);
+
+        return -1;
+    }
+
+    if (pid == 0) {
+        int rc;
+
+        (void)close(ready_pipe[0]);
+        (void)close(start_pipe[1]);
+        (void)close(result_pipe[0]);
+
+        rc =
+            aggressor_worker(
+                pages,
+                page_count,
+                page_size,
+                seconds,
+                cpu,
+                ready_pipe[1],
+                start_pipe[0],
+                result_pipe[1]);
+
+        (void)close(ready_pipe[1]);
+        (void)close(start_pipe[0]);
+        (void)close(result_pipe[1]);
+
+        _exit(rc == 0 ?
+              EXIT_SUCCESS :
+              EXIT_FAILURE);
+    }
+
+    (void)close(ready_pipe[1]);
+    (void)close(start_pipe[0]);
+    (void)close(result_pipe[1]);
+
+    channel->pid = pid;
+    channel->ready_fd = ready_pipe[0];
+    channel->start_fd = start_pipe[1];
+    channel->result_fd = result_pipe[0];
+
+    return 0;
+}
+
+static int wait_ready(
+    struct child_channel *channel,
+    const char *name)
+{
+    char ready = '\0';
+
+    if (channel == NULL ||
+        channel->ready_fd < 0) {
+        return -1;
+    }
+
+    if (read_full(channel->ready_fd,
+                  &ready,
+                  sizeof(ready)) != 0) {
+        fprintf(stderr,
+                "[ERROR] %s worker READY read failed\n",
+                name);
+        return -1;
+    }
+
+    close_fd(&channel->ready_fd);
+
+    if (ready != 'R') {
+        fprintf(stderr,
+                "[ERROR] %s worker failed before READY "
+                "(check CPU affinity / arguments)\n",
+                name);
+        return -1;
+    }
+
+    return 0;
+}
+
+static int start_worker(
+    struct child_channel *channel)
+{
+    char start = 'S';
+
+    if (channel == NULL ||
+        channel->start_fd < 0) {
+        return -1;
+    }
+
+    if (write_full(channel->start_fd,
+                   &start,
+                   sizeof(start)) != 0) {
+        return -1;
+    }
+
+    close_fd(&channel->start_fd);
+
+    return 0;
+}
+
+static int reap_worker(
+    struct child_channel *channel)
+{
+    int status = 0;
+    pid_t rc;
+
+    if (channel == NULL ||
+        channel->pid <= 0) {
+        return -1;
+    }
+
+    do {
+        rc =
+            waitpid(channel->pid,
+                    &status,
+                    0);
+    } while (rc < 0 && errno == EINTR);
+
+    channel->pid = -1;
+
+    if (rc < 0) {
+        return -1;
+    }
+
+    if (!WIFEXITED(status) ||
+        WEXITSTATUS(status) != EXIT_SUCCESS) {
+        return -1;
+    }
+
+    return 0;
+}
+
+/* --------------------------------------------------------- */
+/* One oracle condition                                      */
+/* --------------------------------------------------------- */
+
+static int run_condition(
+    enum oracle_condition condition,
+    const struct oracle_selection *selection,
+    size_t page_size,
+    unsigned int seconds,
+    int victim_cpu,
+    int aggressor_cpu,
+    struct condition_result *out)
+{
+    struct child_channel victim_channel;
+    struct child_channel aggressor_channel;
+
+    struct victim_result victim_result;
+    struct aggressor_result aggressor_result;
+
+    const struct selected_page *aggressor_pages = NULL;
+
+    bool have_aggressor =
+        condition != ORACLE_CONDITION_NONE;
+
+    int rc = -1;
+
+    if (selection == NULL || out == NULL) {
+        return -1;
+    }
+
+    channel_reset(&victim_channel);
+    channel_reset(&aggressor_channel);
+
+    memset(&victim_result, 0, sizeof(victim_result));
+    memset(&aggressor_result, 0, sizeof(aggressor_result));
+    memset(out, 0, sizeof(*out));
+
+    out->condition = condition;
+
+    if (condition == ORACLE_CONDITION_HIGH) {
+        aggressor_pages = selection->high;
+    } else if (condition == ORACLE_CONDITION_LOW) {
+        aggressor_pages = selection->low;
+    }
+
+    printf("\n");
+    printf("============================================================\n");
+    printf("[RUN] condition=%s seconds=%u\n",
+           condition_name(condition),
+           seconds);
+    printf("[RUN] victim_cpu=%d\n",
+           victim_cpu);
+
+    if (have_aggressor) {
+        printf("[RUN] aggressor_cpu=%d\n",
+               aggressor_cpu);
+    }
+
+    printf("============================================================\n");
+
+    if (spawn_victim(
+            selection->victim,
+            selection->page_count,
+            seconds,
+            victim_cpu,
+            &victim_channel) != 0) {
+        goto out;
+    }
+
+    if (have_aggressor) {
+        if (spawn_aggressor(
+                aggressor_pages,
+                selection->page_count,
+                page_size,
+                seconds,
+                aggressor_cpu,
+                &aggressor_channel) != 0) {
+            goto out;
+        }
+    }
+
+    if (wait_ready(
+            &victim_channel,
+            "victim") != 0) {
+        goto out;
+    }
+
+    if (have_aggressor) {
+        if (wait_ready(
+                &aggressor_channel,
+                "aggressor") != 0) {
+            goto out;
+        }
+    }
+
+    /*
+     * aggressor를 아주 조금 먼저 release합니다.
+     *
+     * 두 write 사이의 수 us 수준 차이는 2~10초 측정창에서는
+     * 무시 가능하고, protected가 interference 없는 앞부분을
+     * 먼저 측정하는 상황을 피하는 쪽을 택합니다.
+     */
+    if (have_aggressor) {
+        if (start_worker(
+                &aggressor_channel) != 0) {
+            goto out;
+        }
+    }
+
+    if (start_worker(
+            &victim_channel) != 0) {
+        goto out;
+    }
+
+    if (read_full(
+            victim_channel.result_fd,
+            &victim_result,
+            sizeof(victim_result)) != 0) {
+
+        fprintf(stderr,
+                "[ERROR] victim result read failed\n");
+        goto out;
+    }
+
+    close_fd(&victim_channel.result_fd);
+
+    if (have_aggressor) {
+        if (read_full(
+                aggressor_channel.result_fd,
+                &aggressor_result,
+                sizeof(aggressor_result)) != 0) {
+
+            fprintf(stderr,
+                    "[ERROR] aggressor result read failed\n");
+            goto out;
+        }
+
+        close_fd(&aggressor_channel.result_fd);
+    }
+
+    if (reap_worker(
+            &victim_channel) != 0) {
+        fprintf(stderr,
+                "[ERROR] victim worker failed\n");
+        goto out;
+    }
+
+    if (have_aggressor) {
+        if (reap_worker(
+                &aggressor_channel) != 0) {
+            fprintf(stderr,
+                    "[ERROR] aggressor worker failed\n");
+            goto out;
+        }
+    }
+
+    if (victim_result.rc != 0) {
+        fprintf(stderr,
+                "[ERROR] victim rc=%d\n",
+                victim_result.rc);
+        goto out;
+    }
+
+    if (have_aggressor &&
+        aggressor_result.rc != 0) {
+        fprintf(stderr,
+                "[ERROR] aggressor rc=%d\n",
+                aggressor_result.rc);
+        goto out;
+    }
+
+    out->victim_elapsed_sec =
+        victim_result.elapsed_sec;
+
+    out->victim_reads =
+        victim_result.reads;
+
+    out->victim_ns_per_read =
+        victim_result.ns_per_read;
+
+    if (have_aggressor) {
+        out->aggressor_elapsed_sec =
+            aggressor_result.elapsed_sec;
+
+        out->aggressor_passes =
+            aggressor_result.passes;
+
+        out->aggressor_load_ops =
+            aggressor_result.load_ops;
+
+        if (aggressor_result.elapsed_sec > 0.0) {
+            out->aggressor_mops =
+                (double)aggressor_result.load_ops /
+                aggressor_result.elapsed_sec /
+                1000000.0;
+        }
+    }
+
+    printf("[RESULT] condition=%s\n",
+           condition_name(condition));
+
+    printf("[RESULT] victim_elapsed_sec=%.6f\n",
+           out->victim_elapsed_sec);
+
+    printf("[RESULT] victim_reads=%" PRIu64 "\n",
+           out->victim_reads);
+
+    printf("[RESULT] victim_ns_per_read=%.3f\n",
+           out->victim_ns_per_read);
+
+    if (have_aggressor) {
+        printf("[RESULT] aggressor_elapsed_sec=%.6f\n",
+               out->aggressor_elapsed_sec);
+
+        printf("[RESULT] aggressor_passes=%" PRIu64 "\n",
+               out->aggressor_passes);
+
+        printf("[RESULT] aggressor_load_ops=%" PRIu64 "\n",
+               out->aggressor_load_ops);
+
+        printf("[RESULT] aggressor_Mload_per_sec=%.3f\n",
+               out->aggressor_mops);
+    }
+
+    /*
+     * script parsing용 CSV 한 줄.
+     *
+     * aggressor load op는 scalar 8-byte load 명령 수입니다.
+     * 이것을 곧바로 physical DRAM byte traffic이라고
+     * 해석하면 안 됩니다.
+     */
+    printf("RESULT_CSV,"
+           "%s,"
+           "%.6f,"
+           "%" PRIu64 ","
+           "%.3f,"
+           "%.6f,"
+           "%" PRIu64 ","
+           "%" PRIu64 ","
+           "%.3f\n",
+           condition_name(condition),
+           out->victim_elapsed_sec,
+           out->victim_reads,
+           out->victim_ns_per_read,
+           out->aggressor_elapsed_sec,
+           out->aggressor_passes,
+           out->aggressor_load_ops,
+           out->aggressor_mops);
+
+    rc = 0;
+
+out:
+    if (rc != 0) {
+        abort_channel(&victim_channel);
+        abort_channel(&aggressor_channel);
+    } else {
+        close_fd(&victim_channel.ready_fd);
+        close_fd(&victim_channel.start_fd);
+        close_fd(&victim_channel.result_fd);
+
+        close_fd(&aggressor_channel.ready_fd);
+        close_fd(&aggressor_channel.start_fd);
+        close_fd(&aggressor_channel.result_fd);
+    }
+
+    return rc;
+}
+
+/* --------------------------------------------------------- */
+/* Main                                                      */
+/* --------------------------------------------------------- */
+
+int main(int argc, char **argv)
+{
+    struct oracle_config cfg;
+
+    struct dram_mapping mapping;
+    size_t mask_count = 0U;
+
+    unsigned char *pool = NULL;
+
+    struct pool_page *page_info = NULL;
+    size_t *class_counts = NULL;
+
+    struct oracle_selection selection;
+
+    struct condition_result results[
+        ORACLE_CONDITION_COUNT];
+
+    bool have_result[
+        ORACLE_CONDITION_COUNT] =
+        {false, false, false};
+
+    long page_size_long;
+    size_t page_size;
+
+    size_t pool_bytes;
+    size_t pool_pages;
+
+    size_t workset_bytes;
+    size_t workset_pages;
+
+    size_t class_count;
+
+    size_t valid_pages = 0U;
+
+    uint64_t rng_state;
+
+    int exit_code = EXIT_FAILURE;
+
+    size_t i;
+
+    selection_reset(&selection);
+
+    memset(results, 0, sizeof(results));
+
+    if (parse_args(argc, argv, &cfg) != 0) {
+        usage(argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    if (cfg.seed == 0U) {
+        fprintf(stderr,
+                "[ERROR] seed must be nonzero\n");
+        return EXIT_FAILURE;
+    }
+
+    if (cfg.victim_cpu == cfg.aggressor_cpu) {
+        bool needs_aggressor = false;
+
+        for (i = 0U; i < cfg.order_count; ++i) {
+            if (cfg.order[i] !=
+                ORACLE_CONDITION_NONE) {
+                needs_aggressor = true;
+                break;
+            }
+        }
+
+        if (needs_aggressor) {
+            fprintf(stderr,
+                    "[ERROR] victim and aggressor "
+                    "must use different CPUs\n");
+            return EXIT_FAILURE;
+        }
+    }
+
+    if (signal(SIGPIPE, SIG_IGN) == SIG_ERR) {
+        perror("signal SIGPIPE");
+        return EXIT_FAILURE;
+    }
+
+    page_size_long = sysconf(_SC_PAGESIZE);
+
+    if (page_size_long <= 0) {
+        fprintf(stderr,
+                "[ERROR] sysconf(_SC_PAGESIZE) failed\n");
+        return EXIT_FAILURE;
+    }
+
+    page_size = (size_t)page_size_long;
+
+    if (page_size < CACHELINE_BYTES ||
+        page_size % CACHELINE_BYTES != 0U) {
+        fprintf(stderr,
+                "[ERROR] unsupported page size=%zu\n",
+                page_size);
+        return EXIT_FAILURE;
+    }
+
+    if (cfg.pool_mib >
+        SIZE_MAX / (1024U * 1024U)) {
+        fprintf(stderr,
+                "[ERROR] pool size overflow\n");
+        return EXIT_FAILURE;
+    }
+
+    if (cfg.workset_mib >
+        SIZE_MAX / (1024U * 1024U)) {
+        fprintf(stderr,
+                "[ERROR] workset size overflow\n");
+        return EXIT_FAILURE;
+    }
+
+    pool_bytes =
+        cfg.pool_mib * 1024U * 1024U;
+
+    workset_bytes =
+        cfg.workset_mib * 1024U * 1024U;
+
+    if (pool_bytes % page_size != 0U ||
+        workset_bytes % page_size != 0U) {
+        fprintf(stderr,
+                "[ERROR] MiB sizes not page aligned\n");
+        return EXIT_FAILURE;
+    }
+
+    pool_pages =
+        pool_bytes / page_size;
+
+    workset_pages =
+        workset_bytes / page_size;
+
+    printf("============================================================\n");
+    printf("Oracle DRAM bank-overlap experiment\n");
+    printf("============================================================\n");
+
+    printf("[CONFIG] self_test=%s\n",
+           cfg.self_test ? "true" : "false");
+
+    printf("[CONFIG] page_size=%zu\n",
+           page_size);
+
+    printf("[CONFIG] pool_mib=%zu\n",
+           cfg.pool_mib);
+
+    printf("[CONFIG] workset_mib_each=%zu\n",
+           cfg.workset_mib);
+
+    printf("[CONFIG] group_classes=%zu\n",
+           cfg.group_classes);
+
+    printf("[CONFIG] seconds_per_condition=%u\n",
+           cfg.seconds);
+
+    printf("[CONFIG] victim_cpu=%d\n",
+           cfg.victim_cpu);
+
+    printf("[CONFIG] aggressor_cpu=%d\n",
+           cfg.aggressor_cpu);
+
+    printf("[CONFIG] seed=%" PRIu64 "\n",
+           cfg.seed);
+
+    printf("[CONFIG] order=");
+
+    for (i = 0U; i < cfg.order_count; ++i) {
+        printf("%s%s",
+               i == 0U ? "" : ",",
+               condition_name(cfg.order[i]));
+    }
+
+    printf("\n");
+
+    if (geteuid() != 0) {
+        printf("[WARN] euid=%ld. "
+               "PFN may be masked without CAP_SYS_ADMIN.\n",
+               (long)geteuid());
+    }
+
+    if (load_mapping(
+            cfg.calibration_path,
+            &mapping,
+            &mask_count) != 0) {
+        goto out;
+    }
+
+    if (mask_count == 0U ||
+        mask_count > MAX_ORACLE_MASKS) {
+        goto out;
+    }
+
+    class_count =
+        (size_t)1U << mask_count;
+
+    printf("[MAPPING] possible_class_space=%zu\n",
+           class_count);
+
+    if (cfg.group_classes >
+        class_count / 2U) {
+        fprintf(stderr,
+                "[ERROR] --classes=%zu too large "
+                "for class space=%zu\n",
+                cfg.group_classes,
+                class_count);
+        goto out;
+    }
+
+    /*
+     * IMPORTANT:
+     *
+     * 하나의 parent만 전체 candidate memory pool을 만듭니다.
+     */
+    pool =
+        mmap(NULL,
+             pool_bytes,
+             PROT_READ | PROT_WRITE,
+             MAP_PRIVATE | MAP_ANONYMOUS,
+             -1,
+             0);
+
+    if (pool == MAP_FAILED) {
+        pool = NULL;
+        perror("mmap pool");
+        goto out;
+    }
+
+    /*
+     * 4 KiB page 단위 PFN selection을 명확하게 유지하기 위해
+     * THP를 이 mapping에서는 끕니다.
+     */
+    if (madvise(pool,
+                pool_bytes,
+                MADV_NOHUGEPAGE) != 0) {
+        perror("madvise MADV_NOHUGEPAGE");
+        goto out;
+    }
+
+    printf("[POOL] mmap=%p bytes=%zu pages=%zu\n",
+           (void *)pool,
+           pool_bytes,
+           pool_pages);
+
+    /*
+     * 전 page를 fault-in.
+     *
+     * 이 시점 이후 parent가 /proc/self/pagemap으로
+     * 실제 PFN을 읽습니다.
+     */
+    for (i = 0U; i < pool_pages; ++i) {
+        volatile unsigned char *p =
+            pool + i * page_size;
+
+        *p =
+            (unsigned char)((i % 251U) + 1U);
+    }
+
+    printf("[POOL] fault-in complete\n");
+
+    page_info =
+        calloc(pool_pages,
+               sizeof(*page_info));
+
+    class_counts =
+        calloc(class_count,
+               sizeof(*class_counts));
+
+    if (page_info == NULL ||
+        class_counts == NULL) {
+        fprintf(stderr,
+                "[ERROR] metadata allocation failed\n");
+        goto out;
+    }
+
+    if (classify_pool(
+            pool,
+            pool_pages,
+            page_size,
+            &mapping,
+            page_info,
+            class_counts,
+            class_count,
+            &valid_pages) != 0) {
+        goto out;
+    }
+
+    printf("[POOL] valid_fraction=%.6f\n",
+           (double)valid_pages /
+           (double)pool_pages);
+
+    rng_state = cfg.seed;
+
+    if (build_selection(
+            pool,
+            page_info,
+            pool_pages,
+            page_size,
+            class_counts,
+            class_count,
+            workset_pages,
+            cfg.group_classes,
+            &rng_state,
+            &selection) != 0) {
+        goto out;
+    }
+
+    printf("[SELECT] victim_pages=%zu\n",
+           selection.page_count);
+
+    printf("[SELECT] high_pages=%zu\n",
+           selection.page_count);
+
+    printf("[SELECT] low_pages=%zu\n",
+           selection.page_count);
+
+    if (validate_selection_overlap(
+            &selection,
+            class_count) != 0) {
+        goto out;
+    }
+
+    /*
+     * selected sets의 access order도 deterministic randomize.
+     */
+    shuffle_selected(
+        selection.high,
+        selection.page_count,
+        &rng_state);
+
+    shuffle_selected(
+        selection.low,
+        selection.page_count,
+        &rng_state);
+
+    /*
+     * victim은 page당 첫 uintptr_t에 next VA를 넣습니다.
+     *
+     * 이것은 fork 전에 parent가 한 번만 수행합니다.
+     * child에서는 read-only pointer chase.
+     */
+    if (build_victim_pointer_cycle(
+            selection.victim,
+            selection.page_count,
+            &rng_state) != 0) {
+        goto out;
+    }
+
+    /*
+     * fork 전에 PFN이 그대로인지 확인.
+     */
+    if (verify_selection(
+            "pre-run",
+            &selection,
+            page_size,
+            &mapping) != 0) {
+        goto out;
+    }
+
+    printf("\n");
+    printf("RESULT_CSV_HEADER,"
+           "condition,"
+           "victim_elapsed_sec,"
+           "victim_reads,"
+           "victim_ns_per_read,"
+           "aggressor_elapsed_sec,"
+           "aggressor_passes,"
+           "aggressor_load_ops,"
+           "aggressor_Mload_per_sec\n");
+
+    for (i = 0U; i < cfg.order_count; ++i) {
+        enum oracle_condition condition =
+            cfg.order[i];
+
+        struct condition_result result;
+
+        if (run_condition(
+                condition,
+                &selection,
+                page_size,
+                cfg.seconds,
+                cfg.victim_cpu,
+                cfg.aggressor_cpu,
+                &result) != 0) {
+            goto out;
+        }
+
+        results[(size_t)condition] = result;
+        have_result[(size_t)condition] = true;
+    }
+
+    /*
+     * 모든 condition 후 다시 exact PFN 확인.
+     *
+     * fork child는 read-only이므로 COW가 생기면 안 되고,
+     * physical page migration도 여기서 검출됩니다.
+     */
+    if (verify_selection(
+            "post-run",
+            &selection,
+            page_size,
+            &mapping) != 0) {
+        goto out;
+    }
+
+    if (have_result[ORACLE_CONDITION_NONE] &&
+        have_result[ORACLE_CONDITION_HIGH]) {
+
+        double baseline =
+            results[ORACLE_CONDITION_NONE].
+                victim_ns_per_read;
+
+        double high =
+            results[ORACLE_CONDITION_HIGH].
+                victim_ns_per_read;
+
+        if (baseline > 0.0) {
+            double degradation =
+                (high / baseline - 1.0) * 100.0;
+
+            printf("[COMPARE] "
+                   "high_vs_none_latency_pct=%.3f\n",
+                   degradation);
+        }
+    }
+
+    if (have_result[ORACLE_CONDITION_NONE] &&
+        have_result[ORACLE_CONDITION_LOW]) {
+
+        double baseline =
+            results[ORACLE_CONDITION_NONE].
+                victim_ns_per_read;
+
+        double low =
+            results[ORACLE_CONDITION_LOW].
+                victim_ns_per_read;
+
+        if (baseline > 0.0) {
+            double degradation =
+                (low / baseline - 1.0) * 100.0;
+
+            printf("[COMPARE] "
+                   "low_vs_none_latency_pct=%.3f\n",
+                   degradation);
+        }
+    }
+
+    if (have_result[ORACLE_CONDITION_HIGH] &&
+        have_result[ORACLE_CONDITION_LOW]) {
+
+        double high =
+            results[ORACLE_CONDITION_HIGH].
+                victim_ns_per_read;
+
+        double low =
+            results[ORACLE_CONDITION_LOW].
+                victim_ns_per_read;
+
+        if (low > 0.0) {
+            double difference =
+                (high / low - 1.0) * 100.0;
+
+            printf("[COMPARE] "
+                   "high_vs_low_latency_pct=%.3f\n",
+                   difference);
+        }
+
+        if (results[ORACLE_CONDITION_LOW].
+                aggressor_mops > 0.0) {
+
+            double activity_ratio =
+                results[ORACLE_CONDITION_HIGH].
+                    aggressor_mops /
+                results[ORACLE_CONDITION_LOW].
+                    aggressor_mops;
+
+            printf("[COMPARE] "
+                   "high_low_aggressor_load_rate_ratio="
+                   "%.6f\n",
+                   activity_ratio);
+        }
+    }
+
+    if (cfg.self_test) {
+        printf("\n");
+        printf("============================================================\n");
+        printf("[SELF-TEST PASS]\n");
+        printf("  - calibration loaded\n");
+        printf("  - parent-only PFN selection succeeded\n");
+        printf("  - victim/high exact bank-class overlap = 1\n");
+        printf("  - victim/low exact bank-class overlap = 0\n");
+        printf("  - child workers used inherited selected pages\n");
+        printf("  - pre/post PFNs remained stable\n");
+        printf("  - none/high/low workers completed\n");
+        printf("\n");
+        printf("NOTE: self-test workset is intentionally small.\n");
+        printf("      latency difference is NOT a self-test "
+               "acceptance criterion.\n");
+        printf("============================================================\n");
+    }
+
+    exit_code = EXIT_SUCCESS;
+
+out:
+    selection_destroy(&selection);
+
+    free(page_info);
+    free(class_counts);
+
+    if (pool != NULL) {
+        (void)munmap(pool, pool_bytes);
+    }
+
+    return exit_code;
+}

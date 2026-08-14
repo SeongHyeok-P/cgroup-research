@@ -1,0 +1,12 @@
+READY pid=251517 class=0x7f candidate=4096MiB selected=28MiB scanned_pages=910814 retained_pages=28672 blocks=114688 lines=458752
+mask_set_id,80ea3e894cb0ebd8
+target_class,0x7f
+candidate_mib,4096
+selected_mib,28
+scanned_pages,910814
+retained_pages,28672
+selected_blocks,114688
+selected_lines,458752
+elapsed_sec,2.001092
+total_reads,35800000
+ns_per_read,55.896

@@ -1,0 +1,4 @@
+222959.91;MiB;uncore_imc_free_running_0/data_read/;10001207485;100.00;;
+77829.31;MiB;uncore_imc_free_running_0/data_write/;10001206141;100.00;;
+0.00;MiB;uncore_imc_free_running_1/data_read/;10001205737;100.00;;
+0.00;MiB;uncore_imc_free_running_1/data_write/;10001205832;100.00;;

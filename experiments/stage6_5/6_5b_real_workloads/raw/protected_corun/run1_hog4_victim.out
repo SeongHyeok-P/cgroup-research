@@ -1,0 +1,4 @@
+size_mib,64
+elapsed_sec,10.001387
+total_reads,29700000
+ns_per_read,336.747

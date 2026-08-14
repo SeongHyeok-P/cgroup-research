@@ -1,0 +1,3 @@
+kernel	runs	mean_trial_sec	sd_trial_sec	mean_physical_GBps	sd_physical_GBps	pct_of_hog6_physical
+bfs	3	0.044147	0.000178	28.331	0.092	86.9
+pr	3	1.157180	0.009580	26.288	0.178	80.7

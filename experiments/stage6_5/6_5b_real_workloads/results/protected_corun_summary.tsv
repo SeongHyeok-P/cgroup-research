@@ -1,0 +1,6 @@
+condition	runs	mean_ns_per_read	sd_ns_per_read	slowdown_x	degradation_pct
+none	5	75.662	0.086	1.000	0.0
+hog1	5	180.114	2.010	2.381	138.1
+hog4	5	336.960	0.363	4.453	345.3
+bfs	5	166.078	2.284	2.195	119.5
+pr	5	144.410	1.161	1.909	90.9

@@ -1,0 +1,1 @@
+Linux ubuntu 7.0.12 #1 SMP PREEMPT_DYNAMIC Mon Aug 10 15:57:26 KST 2026 x86_64 x86_64 x86_64 GNU/Linux

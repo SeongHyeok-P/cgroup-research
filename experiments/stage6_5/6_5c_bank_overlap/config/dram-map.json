@@ -1,0 +1,303 @@
+{
+  "acceptance": {
+    "min_holdout_precision": 0.9,
+    "min_holdout_recall": 0.8,
+    "min_successful_round_rate": 0.8,
+    "passed": true
+  },
+  "bank_masks": [
+    "0x0000000a22185100",
+    "0x00000000888a1100",
+    "0x0000000111002300",
+    "0x0000000000491100",
+    "0x000000066630c000",
+    "0x0000000000042300",
+    "0x0000000000410000"
+  ],
+  "collector": {
+    "input_csv_mode": false,
+    "kk_main": "/home/shp1026/cgroup_research/Knock-Knock/main",
+    "measurements": 500,
+    "memory_percent": 25.0,
+    "run_count": 3,
+    "timing_rounds": 50
+  },
+  "generated_unix_ns": 1786638439792271410,
+  "gf2": {
+    "active_bit_positions": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35
+    ],
+    "conflict_records": 297,
+    "filtered_candidate_count": 16,
+    "nullity_histogram": {
+      "6": 11,
+      "7": 28,
+      "8": 21
+    },
+    "raw_candidate_count": 16,
+    "rounds": 60,
+    "subsample_size": 100,
+    "successful_round_rate": 1.0,
+    "successful_rounds": 60
+  },
+  "hardware": {
+    "cpu_model": "Intel(R) Xeon(R) 6369P",
+    "hostname": "ubuntu",
+    "kernel": "7.0.12",
+    "machine": "x86_64",
+    "mem_total_kib": 32552908,
+    "platform": "Linux-7.0.12-x86_64-with-glibc2.39"
+  },
+  "mask_set_id": "80ea3e894cb0ebd8",
+  "metrics": {
+    "fit": {
+      "accuracy": 0.9999703852874108,
+      "f1": 0.9983136593591906,
+      "fn": 1,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 0.9966329966329966,
+      "tn": 33470,
+      "tp": 296
+    },
+    "holdout": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "tn": 22635,
+      "tp": 205
+    },
+    "tune": {
+      "accuracy": 1.0,
+      "f1": 1.0,
+      "fn": 0,
+      "fp": 0,
+      "precision": 1.0,
+      "recall": 1.0,
+      "tn": 11156,
+      "tp": 99
+    }
+  },
+  "notes": [
+    "Threshold is bootstrapped independently for each timing run.",
+    "Consistency filtering is strict: all repeated measurements for a pair must agree.",
+    "The final holdout run is not used for GF(2) discovery or mask selection.",
+    "Row-mask recovery is intentionally omitted; Strategy B needs PA-to-bank class only."
+  ],
+  "runs": [
+    {
+      "consistent_conflicts": 197,
+      "consistent_non_conflicts": 22671,
+      "consistent_pairs": 22868,
+      "csv": "/run/protected-daemon/kk-calibration/timing_run_00.csv",
+      "dropped_inconsistent_pairs": 2132,
+      "raw_unique_pairs": 25000,
+      "run_id": 0,
+      "threshold": {
+        "gap_cycles": 15.0,
+        "high_edge_cycles": 316.0,
+        "high_pairs": 202,
+        "low_edge_cycles": 301.0,
+        "low_pairs": 24798,
+        "threshold_cycles": 308,
+        "total_pairs": 25000
+      }
+    },
+    {
+      "consistent_conflicts": 199,
+      "consistent_non_conflicts": 21955,
+      "consistent_pairs": 22154,
+      "csv": "/run/protected-daemon/kk-calibration/timing_run_01.csv",
+      "dropped_inconsistent_pairs": 2846,
+      "raw_unique_pairs": 25000,
+      "run_id": 1,
+      "threshold": {
+        "gap_cycles": 34.0,
+        "high_edge_cycles": 350.0,
+        "high_pairs": 200,
+        "low_edge_cycles": 316.0,
+        "low_pairs": 24800,
+        "threshold_cycles": 333,
+        "total_pairs": 25000
+      }
+    },
+    {
+      "consistent_conflicts": 205,
+      "consistent_non_conflicts": 22635,
+      "consistent_pairs": 22840,
+      "csv": "/run/protected-daemon/kk-calibration/timing_run_02.csv",
+      "dropped_inconsistent_pairs": 2159,
+      "raw_unique_pairs": 24999,
+      "run_id": 2,
+      "threshold": {
+        "gap_cycles": 46.0,
+        "high_edge_cycles": 350.0,
+        "high_pairs": 205,
+        "low_edge_cycles": 304.0,
+        "low_pairs": 24794,
+        "threshold_cycles": 327,
+        "total_pairs": 24999
+      }
+    }
+  ],
+  "schema_version": 1,
+  "selection": {
+    "candidate_masks": 16,
+    "history": [
+      {
+        "frequency": 11,
+        "mask": "0x0000000a22185100",
+        "tune_metrics": {
+          "accuracy": 0.5136383829409151,
+          "f1": 0.0349083215796897,
+          "fn": 0,
+          "fp": 5474,
+          "precision": 0.017764220348106943,
+          "recall": 1.0,
+          "tn": 5682,
+          "tp": 99
+        },
+        "weight": 9
+      },
+      {
+        "frequency": 19,
+        "mask": "0x00000000888a1100",
+        "tune_metrics": {
+          "accuracy": 0.7680142159040426,
+          "f1": 0.07048771804912779,
+          "fn": 0,
+          "fp": 2611,
+          "precision": 0.036531365313653134,
+          "recall": 1.0,
+          "tn": 8545,
+          "tp": 99
+        },
+        "weight": 7
+      },
+      {
+        "frequency": 41,
+        "mask": "0x0000000111002300",
+        "tune_metrics": {
+          "accuracy": 0.8891159484673479,
+          "f1": 0.13692946058091285,
+          "fn": 0,
+          "fp": 1248,
+          "precision": 0.07349665924276169,
+          "recall": 1.0,
+          "tn": 9908,
+          "tp": 99
+        },
+        "weight": 6
+      },
+      {
+        "frequency": 19,
+        "mask": "0x0000000000491100",
+        "tune_metrics": {
+          "accuracy": 0.950244335850733,
+          "f1": 0.26121372031662266,
+          "fn": 0,
+          "fp": 560,
+          "precision": 0.15022761760242792,
+          "recall": 1.0,
+          "tn": 10596,
+          "tp": 99
+        },
+        "weight": 5
+      },
+      {
+        "frequency": 31,
+        "mask": "0x000000066630c000",
+        "tune_metrics": {
+          "accuracy": 0.9797423367392271,
+          "f1": 0.46478873239436624,
+          "fn": 0,
+          "fp": 228,
+          "precision": 0.30275229357798167,
+          "recall": 1.0,
+          "tn": 10928,
+          "tp": 99
+        },
+        "weight": 10
+      },
+      {
+        "frequency": 60,
+        "mask": "0x0000000000042300",
+        "tune_metrics": {
+          "accuracy": 0.9936028431808085,
+          "f1": 0.7333333333333334,
+          "fn": 0,
+          "fp": 72,
+          "precision": 0.5789473684210527,
+          "recall": 1.0,
+          "tn": 11084,
+          "tp": 99
+        },
+        "weight": 4
+      },
+      {
+        "frequency": 41,
+        "mask": "0x0000000000410000",
+        "tune_metrics": {
+          "accuracy": 1.0,
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "precision": 1.0,
+          "recall": 1.0,
+          "tn": 11156,
+          "tp": 99
+        },
+        "weight": 2
+      }
+    ],
+    "selected_mask_count": 7
+  },
+  "split_mode": "cross-run-holdout",
+  "splits": {
+    "fit_conflicts": 297,
+    "fit_pairs": 33767,
+    "holdout_conflicts": 205,
+    "holdout_pairs": 22840,
+    "tune_conflicts": 99,
+    "tune_pairs": 11255
+  },
+  "status": "success"
+}

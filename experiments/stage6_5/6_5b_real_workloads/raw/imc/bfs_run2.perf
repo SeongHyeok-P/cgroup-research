@@ -1,0 +1,6 @@
+Events disabled
+Events enabled
+255507.02;MiB;uncore_imc_free_running_0/data_read/;10238641203;100.00;;
+22052.26;MiB;uncore_imc_free_running_0/data_write/;10238637565;100.00;;
+0.00;MiB;uncore_imc_free_running_1/data_read/;10238635944;100.00;;
+0.00;MiB;uncore_imc_free_running_1/data_write/;10238634694;100.00;;
