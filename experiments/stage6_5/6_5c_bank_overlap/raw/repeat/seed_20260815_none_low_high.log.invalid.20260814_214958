@@ -1,0 +1,69 @@
+============================================================
+Oracle DRAM bank-overlap experiment v2
+============================================================
+[CONFIG] self_test=false
+[CONFIG] page_size=4096
+[CONFIG] pool_mib_each=2048
+[CONFIG] pool_total_mib=6144
+[CONFIG] workset_mib_each=64
+[CONFIG] group_classes=16
+[CONFIG] seconds_per_condition=765
+[CONFIG] victim_cpu=14
+[CONFIG] aggressor_cpu=12
+[CONFIG] seed=20260815
+[CONFIG] order=none,low,high
+[MAPPING] calibration=/run/protected-daemon/dram-map.json
+[MAPPING] mask_set_id=80ea3e894cb0ebd8
+[MAPPING] mask_count=7
+[MAPPING] mask[0]=0x0000000a22185100
+[MAPPING] mask[1]=0x00000000888a1100
+[MAPPING] mask[2]=0x0000000111002300
+[MAPPING] mask[3]=0x0000000000491100
+[MAPPING] mask[4]=0x000000066630c000
+[MAPPING] mask[5]=0x0000000000042300
+[MAPPING] mask[6]=0x0000000000410000
+[MAPPING] possible_class_space=128
+[OFFSET] page_size=4096 cacheline=64 lines_per_page=64
+[OFFSET] mask[0]_page_offset_bits=0x100
+[OFFSET] mask[1]_page_offset_bits=0x100
+[OFFSET] mask[2]_page_offset_bits=0x300
+[OFFSET] mask[3]_page_offset_bits=0x100
+[OFFSET] mask[4]_page_offset_bits=0x000
+[OFFSET] mask[5]_page_offset_bits=0x300
+[OFFSET] mask[6]_page_offset_bits=0x000
+[SELECT] workset_lines=1048576
+[SELECT] quota_lines_per_class=65536
+[POOL:victim] mmap=0x769a7ee00000 bytes=2147483648 pages=524288
+[PAGEMAP:victim] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[POOL:high] mmap=0x7699fe9ff000 bytes=2147483648 pages=524288
+[PAGEMAP:high] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[POOL:low] mmap=0x76997e5fe000 bytes=2147483648 pages=524288
+[PAGEMAP:low] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[CLASSIFY] counting cache-line classes
+[SELECT] common_eligible_classes=128
+[CLASS] slot=0 overlap_class=0x31 victim_lines=281648 high_lines=262144 low_class=0x43 low_lines=262144 quota=65536
+[CLASS] slot=1 overlap_class=0x4f victim_lines=280032 high_lines=262208 low_class=0x57 low_lines=262144 quota=65536
+[CLASS] slot=2 overlap_class=0x33 victim_lines=280480 high_lines=262208 low_class=0x79 low_lines=262144 quota=65536
+[CLASS] slot=3 overlap_class=0x47 victim_lines=281824 high_lines=262080 low_class=0x0 low_lines=262144 quota=65536
+[CLASS] slot=4 overlap_class=0x61 victim_lines=279840 high_lines=262144 low_class=0x1f low_lines=262144 quota=65536
+[CLASS] slot=5 overlap_class=0x2e victim_lines=241136 high_lines=262144 low_class=0x16 low_lines=262144 quota=65536
+[CLASS] slot=6 overlap_class=0x29 victim_lines=280704 high_lines=262208 low_class=0x4 low_lines=262144 quota=65536
+[CLASS] slot=7 overlap_class=0x28 victim_lines=280912 high_lines=262208 low_class=0x1c low_lines=262144 quota=65536
+[CLASS] slot=8 overlap_class=0x75 victim_lines=243632 high_lines=262144 low_class=0x4d low_lines=262144 quota=65536
+[CLASS] slot=9 overlap_class=0x71 victim_lines=280672 high_lines=262192 low_class=0x4a low_lines=262144 quota=65536
+[CLASS] slot=10 overlap_class=0x77 victim_lines=242400 high_lines=262144 low_class=0x7d low_lines=262144 quota=65536
+[CLASS] slot=11 overlap_class=0x70 victim_lines=280480 high_lines=262144 low_class=0x36 low_lines=262208 quota=65536
+[CLASS] slot=12 overlap_class=0x8 victim_lines=242864 high_lines=262144 low_class=0x2 low_lines=262160 quota=65536
+[CLASS] slot=13 overlap_class=0x59 victim_lines=243040 high_lines=262144 low_class=0x10 low_lines=262144 quota=65536
+[CLASS] slot=14 overlap_class=0x39 victim_lines=280112 high_lines=262208 low_class=0xd low_lines=262144 quota=65536
+[CLASS] slot=15 overlap_class=0x19 victim_lines=242672 high_lines=262144 low_class=0x60 low_lines=262080 quota=65536
+[SELECT] victim_lines=1048576
+[SELECT] high_lines=1048576
+[SELECT] low_lines=1048576
+[OVERLAP-LINE] victim_unique_classes=16
+[OVERLAP-LINE] high_unique_classes=16
+[OVERLAP-LINE] low_unique_classes=16
+[OVERLAP-LINE] victim_vs_high intersection=1048576 union=1048576 weighted_jaccard=1.000000
+[OVERLAP-LINE] victim_vs_low intersection=0 union=2097152 weighted_jaccard=0.000000
+
+RESULT_CSV_HEADER,condition,victim_elapsed_sec,victim_reads,victim_ns_per_read,aggressor_elapsed_sec,aggressor_pas

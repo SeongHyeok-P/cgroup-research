@@ -1,0 +1,116 @@
+============================================================
+Oracle DRAM bank-overlap experiment v2
+============================================================
+[CONFIG] self_test=false
+[CONFIG] page_size=4096
+[CONFIG] pool_mib_each=2048
+[CONFIG] pool_total_mib=6144
+[CONFIG] workset_mib_each=64
+[CONFIG] group_classes=16
+[CONFIG] seconds_per_condition=46
+[CONFIG] victim_cpu=14
+[CONFIG] aggressor_cpu=12
+[CONFIG] seed=20260814
+[CONFIG] order=none,low,high
+[MAPPING] calibration=/run/protected-daemon/dram-map.json
+[MAPPING] mask_set_id=80ea3e894cb0ebd8
+[MAPPING] mask_count=7
+[MAPPING] mask[0]=0x0000000a22185100
+[MAPPING] mask[1]=0x00000000888a1100
+[MAPPING] mask[2]=0x0000000111002300
+[MAPPING] mask[3]=0x0000000000491100
+[MAPPING] mask[4]=0x000000066630c000
+[MAPPING] mask[5]=0x0000000000042300
+[MAPPING] mask[6]=0x0000000000410000
+[MAPPING] possible_class_space=128
+[OFFSET] page_size=4096 cacheline=64 lines_per_page=64
+[OFFSET] mask[0]_page_offset_bits=0x100
+[OFFSET] mask[1]_page_offset_bits=0x100
+[OFFSET] mask[2]_page_offset_bits=0x300
+[OFFSET] mask[3]_page_offset_bits=0x100
+[OFFSET] mask[4]_page_offset_bits=0x000
+[OFFSET] mask[5]_page_offset_bits=0x300
+[OFFSET] mask[6]_page_offset_bits=0x000
+[SELECT] workset_lines=1048576
+[SELECT] quota_lines_per_class=65536
+[POOL:victim] mmap=0x708bbd000000 bytes=2147483648 pages=524288
+[PAGEMAP:victim] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[POOL:high] mmap=0x708b3cbff000 bytes=2147483648 pages=524288
+[PAGEMAP:high] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[POOL:low] mmap=0x708abc7fe000 bytes=2147483648 pages=524288
+[PAGEMAP:low] valid=524288 not_present=0 swapped=0 pfn_unavailable=0
+[CLASSIFY] counting cache-line classes
+[SELECT] common_eligible_classes=128
+[CLASS] slot=0 overlap_class=0x68 victim_lines=281920 high_lines=262192 low_class=0x31 low_lines=262144 quota=65536
+[CLASS] slot=1 overlap_class=0x2d victim_lines=242256 high_lines=262144 low_class=0x13 low_lines=262144 quota=65536
+[CLASS] slot=2 overlap_class=0x78 victim_lines=280768 high_lines=262208 low_class=0x15 low_lines=262144 quota=65536
+[CLASS] slot=3 overlap_class=0x63 victim_lines=281920 high_lines=262192 low_class=0x5f low_lines=262144 quota=65536
+[CLASS] slot=4 overlap_class=0xe victim_lines=280448 high_lines=262208 low_class=0x24 low_lines=262144 quota=65536
+[CLASS] slot=5 overlap_class=0x51 victim_lines=243600 high_lines=262144 low_class=0x5a low_lines=262144 quota=65536
+[CLASS] slot=6 overlap_class=0x17 victim_lines=280768 high_lines=262080 low_class=0x77 low_lines=262144 quota=65536
+[CLASS] slot=7 overlap_class=0x5 victim_lines=280448 high_lines=262208 low_class=0x44 low_lines=262144 quota=65536
+[CLASS] slot=8 overlap_class=0x6a victim_lines=279856 high_lines=262080 low_class=0x2c low_lines=262144 quota=65536
+[CLASS] slot=9 overlap_class=0x42 victim_lines=242352 high_lines=262144 low_class=0x1e low_lines=262144 quota=65536
+[CLASS] slot=10 overlap_class=0x7a victim_lines=280832 high_lines=262080 low_class=0x7b low_lines=262144 quota=65536
+[CLASS] slot=11 overlap_class=0x2b victim_lines=281376 high_lines=262208 low_class=0x6e low_lines=262144 quota=65536
+[CLASS] slot=12 overlap_class=0x11 victim_lines=250192 high_lines=262144 low_class=0x7e low_lines=262144 quota=65536
+[CLASS] slot=13 overlap_class=0x55 victim_lines=280832 high_lines=262080 low_class=0x56 low_lines=262144 quota=65536
+[CLASS] slot=14 overlap_class=0x37 victim_lines=243152 high_lines=262144 low_class=0x75 low_lines=262144 quota=65536
+[CLASS] slot=15 overlap_class=0x4f victim_lines=280240 high_lines=262080 low_class=0x5b low_lines=262144 quota=65536
+[SELECT] victim_lines=1048576
+[SELECT] high_lines=1048576
+[SELECT] low_lines=1048576
+[OVERLAP-LINE] victim_unique_classes=16
+[OVERLAP-LINE] high_unique_classes=16
+[OVERLAP-LINE] low_unique_classes=16
+[OVERLAP-LINE] victim_vs_high intersection=1048576 union=1048576 weighted_jaccard=1.000000
+[OVERLAP-LINE] victim_vs_low intersection=0 union=2097152 weighted_jaccard=0.000000
+
+RESULT_CSV_HEADER,condition,victim_elapsed_sec,victim_reads,victim_ns_per_read,aggressor_elapsed_sec,aggressor_passes,aggressor_load_ops,aggressor_Mload_per_sec
+
+============================================================
+[RUN] condition=none seconds=46
+[RUN] victim_cpu=14
+============================================================
+[RESULT] condition=none
+[RESULT] victim_elapsed_sec=46.000159
+[RESULT] victim_reads=455274496
+[RESULT] victim_ns_per_read=101.038
+RESULT_CSV,none,46.000159,455274496,101.038,0.000000,0,0,0.000
+
+============================================================
+[RUN] condition=low seconds=46
+[RUN] victim_cpu=14
+[RUN] aggressor_cpu=12
+============================================================
+[RESULT] condition=low
+[RESULT] victim_elapsed_sec=46.000292
+[RESULT] victim_reads=392384512
+[RESULT] victim_ns_per_read=117.233
+[RESULT] aggressor_elapsed_sec=46.000056
+[RESULT] aggressor_passes=5492
+[RESULT] aggressor_load_ops=5758844928
+[RESULT] aggressor_Mload_per_sec=125.192
+RESULT_CSV,low,46.000292,392384512,117.233,46.000056,5492,5758844928,125.192
+
+============================================================
+[RUN] condition=high seconds=46
+[RUN] victim_cpu=14
+[RUN] aggressor_cpu=12
+============================================================
+[RESULT] condition=high
+[RESULT] victim_elapsed_sec=46.000169
+[RESULT] victim_reads=344489984
+[RESULT] victim_ns_per_read=133.531
+[RESULT] aggressor_elapsed_sec=46.000010
+[RESULT] aggressor_passes=5416
+[RESULT] aggressor_load_ops=5679742976
+[RESULT] aggressor_Mload_per_sec=123.473
+RESULT_CSV,high,46.000169,344489984,133.531,46.000010,5416,5679742976,123.473
+[COMPARE] high_vs_none_latency_pct=32.159
+[COMPARE] low_vs_none_latency_pct=16.028
+[COMPARE] high_vs_low_latency_pct=13.903
+[COMPARE] high_low_aggressor_load_rate_ratio=0.986265
+[VERIFY] victim_pfn_moved=0 unreadable=0
+[VERIFY] high_pfn_moved=0 unreadable=0
+[VERIFY] low_pfn_moved=0 unreadable=0
