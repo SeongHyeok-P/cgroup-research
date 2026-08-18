@@ -1,1 +1,0 @@
-run	condition	protected_class	aggressor_class	protected_ns_per_read	protected_total_reads	protected_elapsed_sec	aggressor_ns_per_read	aggressor_total_reads	aggressor_elapsed_sec	aggressor_Mreads_per_sec
